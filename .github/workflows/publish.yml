@@ -28,7 +28,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: mrjk/dockerdns
+          images: ghcr.io/mrjk/dockerdns
 
       - name: Build and push
         uses: docker/build-push-action@v4
