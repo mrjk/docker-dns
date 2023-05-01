@@ -15,6 +15,9 @@ This is a fork of [phensley/docker-dns](https://github.com/phensley/docker-dns).
 * Support for Python 3.10
 * Support for exposed ports, as subdomain: `<prot>-<number>.<...>`
 * Add a command line flag for default listen IP
+* Support YAML configuration file
+    * Create concept of input/output and tables
+
 
 
 ## Usage
