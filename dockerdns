@@ -24,6 +24,8 @@ import sys
 import time
 from urllib.parse import urlparse
 
+from pprint import pprint
+
 # libs
 from dnslib import A, DNSHeader, DNSLabel, DNSRecord, PTR, QTYPE, RR
 import docker
@@ -150,14 +152,15 @@ class NameTable():
             return None
 
 
-class DockerMonitor(object):
+class DockerMonitor():
 
     'Reads events from Docker and updates the name table'
 
-    def __init__(self, client, table, domain):
+    def __init__(self, client, table, domain, default_ip=None):
         self._docker = client
         self._table = table
         self._domain = domain.lstrip('.')
+        self._default_ip = default_ip
 
     def run(self):
         # start the event poller, but don't read from the stream yet
@@ -221,6 +224,45 @@ class DockerMonitor(object):
     def _get_addrs(self, networks):
         return [ value['IPAddress'] for value in networks.values() ]
 
+    def _get_net_addrs(self, networks):
+        return {name: value['IPAddress'] for name, value in networks.items()}
+
+    def _get_net_ports(self, ports):
+
+        ports = ports or {}
+
+        #ports = get(networks, 'Ports') # or {}
+        ret = []
+        for port_key, port_conf in ports.items():
+
+            # Parse key
+            port_prot, port_num = None, 'tcp'
+            port_parts = port_key.split('/', 2)
+            if len(port_parts) == 2:
+                port_num, port_prot = port_parts[0], port_parts[1]
+            elif len(port_parts) == 1:
+                port_num = port_parts[0]
+            if not port_num:
+                continue
+
+            # Parse config
+            port_ips = []
+            port_conf = port_conf or []
+            for ip in port_conf:
+                host_ip = ip.get('HostIp')
+                if host_ip in ['0.0.0.0', '::']:
+                    # FAll back on requested public IP
+                    host_ip = self._default_ip
+                if host_ip and host_ip not in port_ips:
+                    port_ips.append(host_ip)
+
+            # Append to records
+            if port_ips:
+                port_rec = '%s-%s' % (port_prot, port_num)
+                ret.append((port_rec, port_ips))
+
+        return ret
+
     def _inspect(self, cid):
         # get full details on this container from docker
         rec = self._docker.inspect_container(cid)
@@ -236,10 +278,29 @@ class DockerMonitor(object):
 
         networks = get(rec, 'NetworkSettings', 'Networks')
         ip_addrs = self._get_addrs(networks)
-
+        ports = get(rec, 'NetworkSettings', 'Ports')
+        ports = self._get_net_ports(ports)
         hostname = '%s.%s' % (get(rec, 'Config', 'Hostname'), self._domain)
-        containers = list(Container(id_, name, state, ip_addrs) for name in self._get_names(name, labels))
-        return containers + [Container(id_, hostname, state, ip_addrs)]
+
+        ret = [ Container(id_, hostname, state, ip_addrs) ]
+        for alias in self._get_names(name, labels):
+            ret.append(Container(id_, alias, state, ip_addrs))
+
+            # Loop over each networks
+            for net_name, net_ip in self._get_net_addrs(networks).items():
+                net_alias = '%s.%s' % (net_name, alias)
+                ret.append(
+                        Container(id_, net_alias, state, [net_ip])
+                        )
+
+            # Loop over each ports
+            for port_key, port_ips in ports:
+                port_rec = '%s.%s' % (port_key, alias)
+                ret.append(
+                        Container(id_, port_rec, state, port_ips)
+                        )
+
+        return ret
 
 
 class DnsServer(DatagramServer):
@@ -352,6 +413,8 @@ def parse_args():
         help='Bind address for DNS server')
     parser.add_argument('--domain', default='docker',
         help='Base domain name for registered services')
+    parser.add_argument('--expose-ip', default='',
+        help='Default IP to report when service expose port on all IPs, skipped if empty')
     parser.add_argument('--resolver', default=DNS_RESOLVER, nargs='*',
         help='Servers for recursive DNS resolution')
     parser.add_argument('--no-recursion', action='store_const', const=1,
@@ -384,7 +447,7 @@ def main():
     except docker.errors.TLSParameterError as e:
         log('Docker error: %s' % e)
         sys.exit(1)
-    monitor = DockerMonitor(client, table, args.domain)
+    monitor = DockerMonitor(client, table, args.domain, args.expose_ip)
     dns = DnsServer(args.dns_bind, table, resolver)
 
     gevent.signal_handler(signal.SIGINT, stop, dns)

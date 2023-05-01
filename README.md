@@ -13,6 +13,9 @@ Note that [docker-dns-rest][dns-rest] expands on this, adding a REST API to add 
 This is a fork of [phensley/docker-dns](https://github.com/phensley/docker-dns). This forks adds the following features:
 
 * Support for Python 3.10
+* Support for exposed ports, as subdomain: `<prot>-<number>.<...>`
+* Add a command line flag for default listen IP
+
 
 ## Usage
 
