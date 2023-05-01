@@ -1,5 +1,4 @@
-docker-dns
-----------
+# docker-dns
 
 Automatic container DNS for [Docker][docker] in a single Python file.
 
@@ -8,8 +7,14 @@ Note that [docker-dns-rest][dns-rest] expands on this, adding a REST API to add 
 [docker]: http://github.com/docker/docker "Docker"
 [dns-rest]: http://github.com/phensley/docker-dns-rest "docker-dns-rest"
 
-Usage
------
+
+## Changes
+
+This is a fork of [phensley/docker-dns](https://github.com/phensley/docker-dns). This forks adds the following features:
+
+* Support for Python 3.10
+
+## Usage
 
 Run some containers:
 
@@ -113,8 +118,7 @@ You can also blacklist specific networks (space-separated) from the resolution t
 
     # Useful when your network topology or firewall prevents clients from accessing some addresses.
 
-License
--------
+## License
 
     Copyright (c) 2014 Patrick Hensley
 

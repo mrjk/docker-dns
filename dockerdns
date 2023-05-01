@@ -3,9 +3,6 @@
 
 # dockerdns - simple, automatic, self-contained dns server for docker
 
-# python 3 compatibility
-from __future__ import print_function
-
 # monkey patch everything
 from gevent import monkey
 monkey.patch_all()
@@ -37,7 +34,7 @@ import docker
 import gevent
 from gevent import socket, threading
 from gevent.server import DatagramServer
-from gevent.resolver_ares import Resolver
+from gevent.resolver.ares import Resolver
 from ipaddress import ip_network, ip_address
 
 import urllib3
@@ -276,7 +273,8 @@ class DnsServer(DatagramServer):
                 if rec.q.qtype == QTYPE.AAAA:
                     addrs = set()
             else:
-                tmp = self._gethostbyname('.'.join(rec.q.qname.label))
+                parts = [ txt.decode() for txt in rec.q.qname.label]
+                tmp = self._gethostbyname('.'.join(parts))
                 if tmp is not None:
                     addrs.add(tmp)
 
@@ -387,13 +385,14 @@ def main():
     client = None
     try:
         client = docker.Client(args.docker, version='auto', tls=tls_config)
-    except docker.errors.TLSParameterError, e:
+    except docker.errors.TLSParameterError as e:
         log('Docker error: %s' % e)
         sys.exit(1)
     monitor = DockerMonitor(client, table, args.domain)
     dns = DnsServer(args.dns_bind, table, resolver)
-    gevent.signal(signal.SIGINT, stop, dns)
-    gevent.signal(signal.SIGTERM, stop, dns)
+
+    gevent.signal_handler(signal.SIGINT, stop, dns)
+    gevent.signal_handler(signal.SIGTERM, stop, dns)
     dns.start()
     gevent.wait([gevent.spawn(monitor.run)])
 
