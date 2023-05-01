@@ -28,13 +28,14 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ghcr.io/mrjk/dockerdns
+          images: ghcr.io/${{ github.repository }}
 
       - name: Build and push
         uses: docker/build-push-action@v4
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ghcr.io/mrjk/dockerdns:latest
+          #tags: ghcr.io/mrjk/dockerdns:latest
+          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
       
