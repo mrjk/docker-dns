@@ -8,12 +8,8 @@ from gevent import monkey
 monkey.patch_all()
 
 # python 3 compatibility
-from future import standard_library
 from functools import reduce
-standard_library.install_aliases()
-from builtins import map
-from builtins import str
-from builtins import object
+from builtins import map, str 
 
 # core
 import argparse
@@ -80,7 +76,7 @@ def contains(txt, *subs):
     return any(s in txt for s in subs)
 
 
-class NameTable(object):
+class NameTable():
 
     'Table mapping names to addresses'
 
