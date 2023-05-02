@@ -4,48 +4,29 @@
 # dockerdns - simple, automatic, self-contained dns server for docker
 
 # monkey patch everything
-from gevent import monkey
-
-monkey.patch_all()
 
 # python 3 compatibility
-from functools import reduce
-from builtins import map, str
-from types import SimpleNamespace
 
 # core
-import argparse
-from collections import defaultdict
+import os
+import sys
 from collections import namedtuple
+from functools import reduce
 from datetime import datetime
 import json
-import os
 import re
-import signal
-import sys
-import time
-from urllib.parse import urlparse
+from ipaddress import ip_network
 
-from pprint import pprint
 
 # libs
-from dnslib import A, DNSHeader, DNSLabel, DNSRecord, PTR, QTYPE, RR
 import docker
-import gevent
-from gevent import socket, threading
-from gevent.server import DatagramServer
-from gevent.resolver.ares import Resolver
-from ipaddress import ip_network, ip_address
-
+from gevent import monkey
 import urllib3
+from jinja2 import Template
 
+monkey.patch_all()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Import local libs
-
-from dockerns.config import DockerNSConfig
-
-# from lib.tables import NameTable
 
 DOCKERNS_CONFIG = os.environ.get("DOCKERNS_CONFIG_FILE", "config.yml")
 PROCESS = "dockerdns"
@@ -70,7 +51,6 @@ for i, network in enumerate(network_blacklist):
 Container = namedtuple("Container", "id, name, running, addrs")
 
 
-from jinja2 import Template
 
 TEMPLATE_BASE = """
 
@@ -219,12 +199,12 @@ class DockerMonitor:
         # bootstrap by inspecting all running containers
         for container in self._docker.containers():
             meta = self._metadata(container["Id"])
-            meta2 = self._metadata_extended(container["Id"])
+            self._metadata_extended(container["Id"])
             # pprint (meta)
             # pprint (meta2)
 
             tm = Template(TEMPLATE_BASE)
-            msg = tm.render(cont=meta)
+            tm.render(cont=meta)
             # Print templated message !
             # print (msg)
 
@@ -298,8 +278,6 @@ class DockerMonitor:
     def _get_addrs(self, networks):
         return [value["IPAddress"] for value in networks.values()]
 
-    # def _get_net_addrs2(self, networks):
-    #    return [ {'ip': value['IPAddress'], 'aliases': value['Aliases']} for value in networks.values() ]
 
     def _get_net_addrs2(self, networks):
         return {
@@ -438,7 +416,7 @@ class DockerMonitor:
         ip_addrs = self._get_addrs(networks)
         ports = get(rec, "NetworkSettings", "Ports")
         ports = self._get_net_ports(ports)
-        hostname = "%s.%s" % (get(rec, "Config", "Hostname"), self._domain)
+        "%s.%s" % (get(rec, "Config", "Hostname"), self._domain)
 
         ret = {
             "uuid": uuid,

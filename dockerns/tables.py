@@ -3,47 +3,27 @@
 
 # dockerdns - simple, automatic, self-contained dns server for docker
 
+
+# python 3 compatibility
+
+# core
+import os
+import re
+import sys
+
+from datetime import datetime
+from pprint import pprint
+
+import urllib3
 # monkey patch everything
 from gevent import monkey
 
+
 monkey.patch_all()
-
-# python 3 compatibility
-from functools import reduce
-from builtins import map, str
-from types import SimpleNamespace
-
-# core
-import argparse
-from collections import defaultdict
-from collections import namedtuple
-from datetime import datetime
-import json
-import os
-import re
-import signal
-import sys
-import time
-from urllib.parse import urlparse
-
-from pprint import pprint
-
-# libs
-from dnslib import A, DNSHeader, DNSLabel, DNSRecord, PTR, QTYPE, RR
-import docker
-import gevent
-from gevent import socket, threading
-from gevent.server import DatagramServer
-from gevent.resolver.ares import Resolver
-from ipaddress import ip_network, ip_address
-
-import urllib3
-
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Import local libs
 
-from dockerns.config import DockerNSConfig
 
 DOCKERNS_CONFIG = os.environ.get("DOCKERNS_CONFIG_FILE", "config.yml")
 PROCESS = "dockerdns"
