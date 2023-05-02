@@ -278,7 +278,7 @@ class Output:
         table = self.tableMgr.ensure(table_name)
         pprint(table)
         table._tables["dnspython"] = NameTable([])
-        self._table = table
+        self._table = table._tables["dnspython"]
 
     def start_svc(self):
         _conf = self.conf

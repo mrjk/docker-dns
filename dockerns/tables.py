@@ -49,17 +49,21 @@ class TableInstance:
         # self.remove = self._table.remove
 
     # V2
+    #def get(self, name, address):
+    #    for table_name, table in self._tables.items():
+    #        table.get(name, address)
+
     def add(self, name, address):
         for table_name, table in self._tables.items():
             table.add(name, address)
 
     def rename(self, old_name, new_name):
         for table_name, table in self._tables.items():
-            table.add(old_name, new_name)
+            table.rename(old_name, new_name)
 
     def remove(self, name):
         for table_name, table in self._tables.items():
-            table.add(name)
+            table.remove(name)
 
     def debug(self):
         ret = {
