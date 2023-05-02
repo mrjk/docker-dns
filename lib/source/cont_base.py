@@ -42,7 +42,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Import local libs
 
 from lib.config import DockerNSConfig
-from lib.tables import NameTable
+#from lib.tables import NameTable
 
 DOCKERNS_CONFIG = os.environ.get('DOCKERNS_CONFIG_FILE', 'config.yml')
 PROCESS = 'dockerdns'
@@ -148,6 +148,8 @@ def parse_config(str_conf):
     #return SimpleNamespace(**ret)
 
 
+# Plugin entrypoint
+# =============
 
 class Source():
     'Reads events from Docker and updates the name table'
@@ -168,12 +170,11 @@ class Source():
         self.conf = _conf
         docker_uri = _conf['docker_socket']
 
-        #self.table = NameTable([])
         self.monitor = DockerMonitor(self, docker_uri)
 
-        #self.monitor = DockerMonitor(self, client, _conf['domain'], _conf['expose_ip'])
-#        self.table = NameTable([(k + "." + conf['domain'], v) for (k, v) in args.record])
 
+# Docker monitoring
+# =============
 
 class DockerMonitor():
 
@@ -195,11 +196,12 @@ class DockerMonitor():
         self._docker = client
         self.tableMgr = parent.tableMgr
         self._tables = parent.conf['tables']
+        log ("Working with tables: %s" % self._tables )
         self._domain = parent.conf['domain'].lstrip('.')
         self._default_ip = parent.conf['expose_ip']
 
-        for name in self._tables:
-            self.tableMgr.ensure(name)
+        #for name in self._tables:
+        #    self.tableMgr.ensure(name)
 
 
 #    def OLD__init__(self, parent, client, table, domain, default_ip=None):
@@ -223,7 +225,8 @@ class DockerMonitor():
 
             tm = Template(TEMPLATE_BASE)
             msg = tm.render(cont=meta)
-            print (msg)
+            # Print templated message !
+            #print (msg)
 
 
             for rec in self._inspect(container['Id']):
@@ -266,8 +269,8 @@ class DockerMonitor():
                         log('Error: %s', e)
 
         ## WIPPP
-        #print ("DEBUG TABLLESSSSS")
-        #self.tableMgr.debug()
+        print ("DEBUG TABLLESSSSS")
+        self.tableMgr.debug()
         #return
 
     def _get_name(self, name):

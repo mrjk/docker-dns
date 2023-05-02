@@ -55,14 +55,6 @@ EPILOG = '''
 
 '''
 
-network_blacklist = os.environ.get('NETWORK_BLACKLIST')
-if not network_blacklist:
-    network_blacklist = "255.255.255.255/32"
-
-network_blacklist = network_blacklist.split()
-for i, network in enumerate(network_blacklist):
-    network_blacklist[i] = ip_network(network)
-
 
 
 def log(msg, *args):
@@ -76,117 +68,38 @@ def log(msg, *args):
         sys.stderr.flush()
 
 
-#def get(d, *keys):
-#    empty = {}
-#    return reduce(lambda d, k: d.get(k, empty), keys, d) or None
-
-
-
-class NameTable():
-
-    'Table mapping names to addresses'
-
-    def __init__(self, records):
-        self._storage = defaultdict(set)
-        self._lock = threading.Lock()
-        for rec in records:
-            self.add(rec[0], rec[1])
-
-    def debug(self):
-
-        ret = {} #dict(self._storage)
-        for k, v in self._storage.items():
-            name = '.'.join([t.decode() for t in k])
-            ret[name] = v
-
-        return ret
-
-    def add(self, name, addr):
-        if name.startswith('.'):
-            name = '*' + name
-        key = self._key(name)
-        if key:
-            with self._lock:
-                for network in network_blacklist:
-                    if addr and ip_address(addr) in network:
-                        log('skipping table.add %s -> %s (blacklisted network)', name, addr)
-                        return
-                log('table.add %s -> %s', name, addr)
-                self._storage[key].add(addr)
-
-                # reverse map for PTR records
-                addr = '%s.in-addr.arpa' % '.'.join(reversed(addr.split('.')))
-                key = self._key(addr)
-                log('table.add %s -> %s', addr, name)
-                self._storage[key].add(name)
-
-    def get(self, name):
-        key = self._key(name)
-        if key:
-            with self._lock:
-                res = self._storage.get(key)
-
-                wild = re.sub(r'^[^\.]+', '*', name)
-                wildkey = self._key(wild)
-                wildres = self._storage.get(wildkey)
-
-                if res:
-                    log('table.get %s with %s' % (name, ", ".join(addr for addr in res)))
-                elif wildres:
-                    log('table.get %s with %s' % (name, ", ".join(addr for addr in wildres)))
-                    res = wildres
-                else:
-                    log('table.get %s with NoneType' % (name))
-                return res
-
-    def rename(self, old_name, new_name):
-        if not old_name or not new_name:
-            return
-        old_name = old_name.lstrip('/')
-        old_key = self._key(old_name)
-        new_key = self._key(new_name)
-        with self._lock:
-            self._storage[new_key] = self._storage.pop(old_key)
-            log('table.rename (%s -> %s)', old_name, new_name)
-
-    def remove(self, name):
-        key = self._key(name)
-        if key:
-            with self._lock:
-                if key in self._storage:
-                    log('table.remove %s', name)
-                    del self._storage[key]
-
-    def _key(self, name):
-        try:
-            label = DNSLabel(name.lower()).label
-            return label
-        except Exception:
-            return None
-
-
 class TableInstance():
     'Single TableInstance'
 
     def __init__(self, name, conf=None):
 
-        self._table = NameTable([])
+        self._tables = {}
         self.name = name
         self.conf = conf or {}
 
 
-        self.add = self._table.add
-        self.rename = self._table.rename
-        self.remove = self._table.remove
+        # V1
+        # self.add = self._table.add
+        # self.rename = self._table.rename
+        # self.remove = self._table.remove
 
-#    def add(self, name, address):
-#        self._table.add(name, address)
+    # V2
+    def add(self, name, address):
+        for table_name, table in self._tables.items():
+            table.add(name, address)
+    def rename(self, old_name, new_name):
+        for table_name, table in self._tables.items():
+            table.add(old_name, new_name)
+    def remove(self, name):
+        for table_name, table in self._tables.items():
+            table.add(name)
 
 
     def debug(self):
         ret = {
                 'conf': self.__dict__,
-                'table': self._table.debug(),
+                '_tables': { key: val for key, val in self._tables.items() },
+                #'_tables': { key: val.debug() for key, val in self._tables.items() },
                 }
         return ret
 
@@ -230,6 +143,7 @@ class TableInstances():
     def ensure(self, name):
         if name not in self._tables:
             self._tables[name] = TableInstance(name, {})
+        return self._tables[name]
 
 
     def get_table(self, name):
@@ -239,11 +153,12 @@ class TableInstances():
 
     def debug(self):
 
+        print ("Tables debug:")
         ret = {}
         for table_name, table in self._tables.items():
             ret[table_name] =  table.debug()
 
-        pprint (ret)
+        pprint (ret, indent=2)
         return ret
 
 

@@ -42,6 +42,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Import local libs
 
 from lib.config import DockerNSConfig
+#from lib.tables import NameTable
 
 DOCKERNS_CONFIG = os.environ.get('DOCKERNS_CONFIG_FILE', 'config.yml')
 PROCESS = 'dockerdns'
@@ -54,6 +55,16 @@ QUIET = 0
 EPILOG = '''
 
 '''
+
+network_blacklist = os.environ.get('NETWORK_BLACKLIST')
+if not network_blacklist:
+    network_blacklist = "255.255.255.255/32"
+
+network_blacklist = network_blacklist.split()
+for i, network in enumerate(network_blacklist):
+    network_blacklist[i] = ip_network(network)
+
+
 
 
 def log(msg, *args):
@@ -78,65 +89,95 @@ def stop(*servers):
             svr.stop()
     sys.exit(signal.SIGINT)
 
-class Output():
-    'Store records in embedded DNS server'
 
-    default_conf = {
-                'bind': '127.0.0.1:53',
-                #'resolvers': '8.8.8.8,8.8.4.4',
-                'resolvers': '8.8.8.8',
-                'recurse': True,
-                'records': ['default'],
-                'table': 'default',
-            }
+# Datastore Class
+# =============
 
-    def __init__(self, tableMgr, conf=None):
+# Maybe this class should be stored somewhere else ...
+class NameTable():
+    'Table mapping names to addresses'
 
-        self.tableMgr = tableMgr
+    def __init__(self, records):
+        self._storage = defaultdict(set)
+        self._lock = threading.Lock()
+        for rec in records:
+            self.add(rec[0], rec[1])
 
-        _conf = dict(self.default_conf)
-        _conf.update(conf or {})
-        self.conf = _conf
-        table = _conf.get('table', 'default')
-        self._table = self.tableMgr.get_table(table)
+    def debug(self):
 
-        print ("DEBUG HERE", self._table.__dict__)
-        self.tableMgr.debug()
+        ret = {} #dict(self._storage)
+        for k, v in self._storage.items():
+            name = '.'.join([t.decode() for t in k]) 
+            ret[name] = v 
 
-        if self._table is not None:
-            print (" STARTING DNS SERVERRRRR on " + _conf['bind'] )
-            resolvers = (_conf['resolvers']) if _conf['recurse'] else ()
-            dns = DnsServer(_conf['bind'], self._table, resolvers)
-        else:
-            log ('Server did not start because no known table %s' % table)
+        return ret 
 
-        self.monitor = dns
+    def add(self, name, addr):
+        if name.startswith('.'):
+            name = '*' + name
+        key = self._key(name)
+        if key:
+            with self._lock:
+                for network in network_blacklist:
+                    if addr and ip_address(addr) in network:
+                        log('skipping table.add %s -> %s (blacklisted network)', name, addr)
+                        return
+                log('table.add %s -> %s', name, addr)
+                self._storage[key].add(addr)
 
-        return
+                # reverse map for PTR records
+                addr = '%s.in-addr.arpa' % '.'.join(reversed(addr.split('.')))
+                key = self._key(addr)
+                log('table.add %s -> %s', addr, name)
+                self._storage[key].add(name)
 
-    def start_svc(self):
+    def get(self, name):
+        key = self._key(name)
+        if key:
+            with self._lock:
+                res = self._storage.get(key)
 
-        dns = self.monitor
-        gevent.signal_handler(signal.SIGINT, stop, dns)
-        gevent.signal_handler(signal.SIGTERM, stop, dns)
-        dns.start()
+                wild = re.sub(r'^[^\.]+', '*', name)
+                wildkey = self._key(wild)
+                wildres = self._storage.get(wildkey)
+
+                if res:
+                    log('table.get %s with %s' % (name, ", ".join(addr for addr in res)))
+                elif wildres:
+                    log('table.get %s with %s' % (name, ", ".join(addr for addr in wildres)))
+                    res = wildres
+                else:
+                    log('table.get %s with NoneType' % (name))
+                return res 
+
+    def rename(self, old_name, new_name):
+        if not old_name or not new_name:
+            return
+        old_name = old_name.lstrip('/')
+        old_key = self._key(old_name)
+        new_key = self._key(new_name)
+        with self._lock:
+            self._storage[new_key] = self._storage.pop(old_key)
+            log('table.rename (%s -> %s)', old_name, new_name)
+
+    def remove(self, name):
+        key = self._key(name)
+        if key:
+            with self._lock:
+                if key in self._storage:
+                    log('table.remove %s', name)
+                    del self._storage[key]
+
+    def _key(self, name):
+        try:
+            label = DNSLabel(name.lower()).label
+            return label
+        except Exception:
+            return None
 
 
-       # docker_uri = _conf['docker_socket']
-       # tls_config = None
-       # if docker_uri.startswith('https://'):
-       #     tls_config = docker.tls.TLSConfig(verify=False)
-       # try:
-       #     client = docker.Client(docker_uri, version='auto', tls=tls_config)
-       # except docker.errors.TLSParameterError as e:
-       #     log('Docker error: %s' % e)
-       #     sys.exit(1)
-
-       # self.table = NameTable([]) #[(k + "." + conf['domain'], v) for (k, v) in args.record])
-       # self.monitor = DockerMonitor(client, self.table, _conf['domain'], _conf['expose_ip'])
-#      #  self.table = NameTable([(k + "." + conf['domain'], v) for (k, v) in args.record])
-
-
+# DNS server
+# =============
 
 
 class DnsServer(DatagramServer):
@@ -215,3 +256,54 @@ class DnsServer(DatagramServer):
 
 
 
+# Plugin entrypoint
+# =============
+
+
+class Output():
+    'Store records in embedded DNS server'
+
+    default_conf = {
+                'bind': '127.0.0.1:53',
+                #'resolvers': '8.8.8.8,8.8.4.4',
+                'resolvers': '8.8.8.8',
+                'recurse': True,
+                'records': ['default'],
+                'table': 'default',
+            }
+
+    def __init__(self, tableMgr, conf=None):
+
+        self.tableMgr = tableMgr
+        _conf = dict(self.default_conf)
+        _conf.update(conf or {})
+        self.conf = _conf
+
+        # Create table
+        self.create_table()
+
+
+    def create_table(self):
+
+        # Get table
+        table_name = self.conf.get('table', 'default')
+        self.table_name = table_name
+
+
+        # Add methods
+        table = self.tableMgr.ensure(table_name)
+        pprint (table)
+        table._tables['dnspython'] = NameTable([])
+        self._table = table
+
+    def start_svc(self):
+
+        _conf = self.conf
+
+        log ("Starting dns server on: %s (%s/dnspython)" % (_conf['bind'], self.table_name) )
+        resolvers = (_conf['resolvers']) if _conf['recurse'] else ()
+
+        dns = DnsServer(_conf['bind'], self._table, resolvers)
+        gevent.signal_handler(signal.SIGINT, stop, dns)
+        gevent.signal_handler(signal.SIGTERM, stop, dns)
+        dns.start()

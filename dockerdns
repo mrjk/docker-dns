@@ -132,22 +132,10 @@ def main():
     tables = TableInstances(confs=tmp.get_conf('tables'))
     wait_list = []
 
-    for src_name, src in tmp.get_conf('sources').items():
-        driver = src.get('driver', None)
-        if not driver:
-            continue
-        pkg_name = f"lib.source.{driver}"
-        mod = importlib.import_module(pkg_name)
-        src = mod.Source(tables, conf=src)
-
-#        monitor = src.monitor
-        wait_list.append(gevent.spawn(src.monitor.start))
-
-    #pprint(tables.debug())
-
+    # Start outputs
     for output_name, output in tmp.get_conf('outputs').items():
         driver = output.get('driver', None)
-        print ("LOADING ", driver)
+        log ("Loading output driver: %s" % driver)
         if not driver:
             continue
         pkg_name = f"lib.output.{driver}"
@@ -155,6 +143,20 @@ def main():
         output = mod.Output(tables, conf=output)
 
         output.start_svc()
+
+    # Start sources
+    for src_name, src in tmp.get_conf('sources').items():
+        driver = src.get('driver', None)
+        if not driver:
+            continue
+        log ("Loading source driver: %s" % driver)
+        pkg_name = f"lib.source.{driver}"
+        mod = importlib.import_module(pkg_name)
+        src = mod.Source(tables, conf=src)
+
+        wait_list.append(gevent.spawn(src.monitor.start))
+
+    tables.debug()
 
     gevent.wait(wait_list)
     return
