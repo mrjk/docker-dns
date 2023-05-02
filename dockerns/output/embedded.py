@@ -12,8 +12,6 @@ import re
 import sys
 import signal
 from collections import defaultdict
-from datetime import datetime
-from functools import reduce
 from builtins import str
 
 from pprint import pprint
@@ -29,6 +27,9 @@ from gevent.resolver.ares import Resolver
 from ipaddress import ip_network, ip_address
 
 import urllib3
+
+
+from dockerns.common import log, contains
 
 monkey.patch_all()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -57,24 +58,6 @@ if not network_blacklist:
 network_blacklist = network_blacklist.split()
 for i, network in enumerate(network_blacklist):
     network_blacklist[i] = ip_network(network)
-
-
-def log(msg, *args):
-    global QUIET
-    if not QUIET:
-        now = datetime.now().isoformat()
-        line = "%s [%s] %s\n" % (now, PROCESS, msg % args)
-        sys.stderr.write(line)
-        sys.stderr.flush()
-
-
-def get(d, *keys):
-    empty = {}
-    return reduce(lambda d, k: d.get(k, empty), keys, d) or None
-
-
-def contains(txt, *subs):
-    return any(s in txt for s in subs)
 
 
 def stop(*servers):

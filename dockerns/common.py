@@ -3,8 +3,9 @@ import re
 from functools import reduce
 from datetime import datetime
 
-QUIET=False
+QUIET = False
 PROCESS = "dockerdns"
+
 
 def log(msg, *args):
     global QUIET
@@ -33,4 +34,3 @@ def splitrecord(rec):
 
 def contains(txt, *subs):
     return any(s in txt for s in subs)
-

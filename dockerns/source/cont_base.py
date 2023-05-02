@@ -15,7 +15,6 @@ from functools import reduce
 from datetime import datetime
 import json
 import re
-from ipaddress import ip_network
 
 
 # libs
@@ -40,16 +39,7 @@ EPILOG = """
 
 """
 
-network_blacklist = os.environ.get("NETWORK_BLACKLIST")
-if not network_blacklist:
-    network_blacklist = "255.255.255.255/32"
-
-network_blacklist = network_blacklist.split()
-for i, network in enumerate(network_blacklist):
-    network_blacklist[i] = ip_network(network)
-
 Container = namedtuple("Container", "id, name, running, addrs")
-
 
 
 TEMPLATE_BASE = """
@@ -277,7 +267,6 @@ class DockerMonitor:
 
     def _get_addrs(self, networks):
         return [value["IPAddress"] for value in networks.values()]
-
 
     def _get_net_addrs2(self, networks):
         return {

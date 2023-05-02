@@ -9,17 +9,14 @@
 # core
 import os
 import re
-import sys
 
-from datetime import datetime
 from pprint import pprint
 
+# from gevent import monkey
 import urllib3
-# monkey patch everything
-from gevent import monkey
 
 
-monkey.patch_all()
+# monkey.patch_all()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Import local libs
@@ -36,17 +33,6 @@ QUIET = 0
 EPILOG = """
 
 """
-
-
-def log(msg, *args):
-    # WIPP
-    return
-    global QUIET
-    if not QUIET:
-        now = datetime.now().isoformat()
-        line = "%s [%s] %s\n" % (now, PROCESS, msg % args)
-        sys.stderr.write(line)
-        sys.stderr.flush()
 
 
 class TableInstance:
