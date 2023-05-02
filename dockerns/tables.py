@@ -41,7 +41,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Import local libs
 
-from lib.config import DockerNSConfig
+from dockerns.config import DockerNSConfig
 
 DOCKERNS_CONFIG = os.environ.get('DOCKERNS_CONFIG_FILE', 'config.yml')
 PROCESS = 'dockerdns'

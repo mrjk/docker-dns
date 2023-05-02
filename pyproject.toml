@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "dockerns"
+version = "0.1.0"
+description = "Nameserver for Docker"
+authors = ["mrjk"]
+license = "GPLv3"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+dnslib = "^0.9.23"
+gevent = "^22.10.2"
+docker-py = "^1.10.6"
+anyconfig = "^0.13.0"
+
+
+[tool.poetry.scripts]
+dockerns = 'dockerns.app:main'
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.3.0"
+ruff = "^0.0.264"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

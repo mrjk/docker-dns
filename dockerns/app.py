@@ -41,7 +41,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Import local libs
 
-from lib.config import DockerNSConfig
+from dockerns.config import DockerNSConfig
 
 DOCKERNS_CONFIG = os.environ.get('DOCKERNS_CONFIG_FILE', 'config.yml')
 PROCESS = 'dockerdns'
@@ -118,7 +118,7 @@ def parse_args():
     return parser.parse_args()
 
 import importlib
-from lib.tables import TableInstances
+from dockerns.tables import TableInstances
 
 def main():
     tmp = DockerNSConfig()
@@ -138,7 +138,7 @@ def main():
         log ("Loading output driver: %s" % driver)
         if not driver:
             continue
-        pkg_name = f"lib.output.{driver}"
+        pkg_name = f"dockerns.output.{driver}"
         mod = importlib.import_module(pkg_name)
         output = mod.Output(tables, conf=output)
 
@@ -150,7 +150,7 @@ def main():
         if not driver:
             continue
         log ("Loading source driver: %s" % driver)
-        pkg_name = f"lib.source.{driver}"
+        pkg_name = f"dockerns.source.{driver}"
         mod = importlib.import_module(pkg_name)
         src = mod.Source(tables, conf=src)
 
