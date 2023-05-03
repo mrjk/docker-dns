@@ -103,42 +103,41 @@ def parse_args():
     return parser.parse_args()
 
 
-
 class App:
-
     def __init__(self):
-
         _conf = DockerNSConfig()
         self.settings = SimpleNamespace(**_conf.get_conf("config", {}))
 
-        pprint (self.settings)
+        pprint(self.settings)
 
         self.conf = _conf
-
 
     def cli(self):
         # global QUIET
         # QUIET = False
 
-
         # Create stores
         wait_list = []
         stores = StoreMgr(
-                confs=self.conf.get_conf("tables", default={}),
-                settings=self.settings)
+            confs=self.conf.get_conf("tables", default={}), settings=self.settings
+        )
 
         # Start backends
         backends = BackendMgr(
-                self, stores,
-                confs=self.conf.get_conf("outputs", default={}),
-                settings=self.settings)
+            self,
+            stores,
+            confs=self.conf.get_conf("outputs", default={}),
+            settings=self.settings,
+        )
         wait_list.extend(backends.start())
 
         # Start sources
         sources = SourceMgr(
-                self, stores,
-                confs=self.conf.get_conf("sources", default={}),
-                settings=self.settings)
+            self,
+            stores,
+            confs=self.conf.get_conf("sources", default={}),
+            settings=self.settings,
+        )
         wait_list.extend(sources.start())
 
         # Wait for background processes
@@ -179,6 +178,7 @@ class App:
 #     dns.start()
 #     gevent.wait([gevent.spawn(monitor.run)])
 
+
 def main():
     app = App()
     app.cli()
@@ -186,4 +186,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

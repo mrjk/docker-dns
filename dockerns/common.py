@@ -38,6 +38,7 @@ def splitrecord(rec):
 def contains(txt, *subs):
     return any(s in txt for s in subs)
 
+
 # TODO: add tests
 def from_yaml(string):
     "Transform YAML string to python dict"
@@ -47,8 +48,7 @@ def from_yaml(string):
 # TODO: add tests
 def to_yaml(obj, headers=False):
     "Transform obj to YAML"
-    options = {}
-    return yaml.safe_dump(data)
+    return yaml.safe_dump(obj)
 
 
 # TODO: add tests
@@ -74,6 +74,7 @@ def to_dict(obj):
         obj = json.dumps(obj)
     return json.loads(obj)
 
+
 def read_file(file):
     "Read file content"
     with open(file, encoding="utf-8") as _file:
@@ -89,4 +90,3 @@ def write_file(file, content):
 
     with open(file, "w", encoding="utf-8") as _file:
         _file.write(content)
-

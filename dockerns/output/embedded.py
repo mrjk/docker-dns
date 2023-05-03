@@ -146,7 +146,6 @@ class NameTable(StoreTable):
 
         return ret
 
-
     def add(self, record):
         domain = record.domain
         name = record.name
@@ -225,7 +224,7 @@ class NameTable(StoreTable):
             self._storage[new_key] = self._storage.pop(old_key)
             log("table.rename (%s -> %s)", old_name, new_name)
 
-    def remove(self, record, rr=None ):
+    def remove(self, record, rr=None):
         domain = record.domain
         name = record.name
         rr = rr or record.rr
@@ -235,7 +234,6 @@ class NameTable(StoreTable):
         key = self._key(name)
         if key:
             with self._lock:
-                
                 # Remove the whole entry
                 if rr is None:
                     if key in self._storage:
@@ -252,7 +250,6 @@ class NameTable(StoreTable):
                     # Cleanup empty entries
                     if not self._storage[key]:
                         del self._storage[key]
-
 
     def _key(self, name):
         try:

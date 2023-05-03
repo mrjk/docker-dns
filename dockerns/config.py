@@ -41,19 +41,19 @@ DEFAULT_CONF = {
             #    },
             # },
         },
-        #"tables": {
+        # "tables": {
         #    "default": {
         #        "tld": "docker",
         #        "cont_template": "JINJA_STR",
         #        # NOLOGIC HERE ! 'reverse': True,
         #        # NOLOGIC HERE ! 'parse_labels': True,
         #    },
-        #},
-        #"other": {
+        # },
+        # "other": {
         #    "tld": "docker",
         #    #'tld': 'example.org',
         #    "cont_template": "JINJA_STR",
-        #},
+        # },
     },
 }
 
@@ -108,7 +108,7 @@ class DockerNSConfig:
             parser.add_argument(opt_name, default=value, help="NOHELP")
 
         ret = dict(parser.parse_args().__dict__)
-        #pprint(ret)
+        # pprint(ret)
         return ret
 
     # Assemble configs

@@ -8,13 +8,10 @@
 
 # core
 import os
-from dataclasses import dataclass
 from pprint import pprint
 
 # from gevent import monkey
 import urllib3
-import importlib
-import gevent
 
 # Import local libs
 from dockerns.common import log, read_file, from_json, to_json, write_file
@@ -26,6 +23,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Record
 # ==================
 
+
 class Record:
     """Class for keeping track of a DNS record"""
 
@@ -33,24 +31,20 @@ class Record:
         "domain": "",
         "name": "",
         "kind": "A",
-        "rr": None, # list
-
+        "rr": None,  # list
         "reverse": True,
-
         "owner": None,
-        "meta": None, # dict
+        "meta": None,  # dict
     }
 
     def serialize(self):
         ret = self.__dict__
         return ret
-                
 
     def __repr__(self):
         return f"Record({self.name}.{self.domain}:{self.kind})"
 
     def __init__(self, **kwargs):
-
         conf = dict(self.default_conf)
         conf.update(kwargs)
         for key, value in conf.items():
@@ -63,11 +57,11 @@ class Record:
         assert self.kind, f"Invalid kind '{self.kind}' for: {self.__dict__}"
 
 
-
 # StateManagement
 # ==================
 
-class StoreTable():
+
+class StoreTable:
     "Generic store table"
 
     def __init__(self, conf=None, name=None):
@@ -77,7 +71,7 @@ class StoreTable():
         conf = dict(self.default_conf)
         conf.update(conf or {})
         self.conf = conf
-        self.name = name or 'default'
+        self.name = name or "default"
 
         self._db = []
         self._init()
@@ -89,28 +83,29 @@ class StoreTable():
         "Debug hook"
         return self._db
 
-#    # CRUD methods
+    #    # CRUD methods
     def query(self, name=None, domain=None, owner=None, record=None):
         "Get hook"
         return None
-#
-#    def add(self, rec):
-#        "Add hook"
-#
-#    def rename(self, domain, old_name, new_name):
-#        "Rename hook"
-#
-#    def remove(self, rec):
-#        "Remove hook"
-#
-#
-#    # Serialization methods
-#    def serialize(self):
-#        "Serialize data"
-#
-#    def deserialize(self, payload):
-#        "Deserialize data"
-#
+
+    #
+    #    def add(self, rec):
+    #        "Add hook"
+    #
+    #    def rename(self, domain, old_name, new_name):
+    #        "Rename hook"
+    #
+    #    def remove(self, rec):
+    #        "Remove hook"
+    #
+    #
+    #    # Serialization methods
+    #    def serialize(self):
+    #        "Serialize data"
+    #
+    #    def deserialize(self, payload):
+    #        "Deserialize data"
+    #
     # Commit methods
     def commit(self):
         "Commit hook"
@@ -119,9 +114,9 @@ class StoreTable():
         "Prepare hook"
 
 
-
 # Internal Tables
 # ==================
+
 
 class Stateful(StoreTable):
     "Stateful store table"
@@ -130,24 +125,22 @@ class Stateful(StoreTable):
         "directory": "/tmp/dockerns",
     }
 
-
     def _init(self):
         # Load state DB from json file
-        self.file = os.path.join(self.conf.get("directory"), self.name + '.json' )
-        
+        self.file = os.path.join(self.conf.get("directory"), self.name + ".json")
+
         if False:
             self._read_file()
-
 
     # Load from file
     # ----------------
     def _read_file(self):
-
         try:
             data = read_file(self.file)
-            log (f"Read store state from: {self.file}")
-        except FileNotFoundError as err:
-            data = ''
+            log(f"Read store state from: {self.file}")
+        except FileNotFoundError:
+            log(f"Ignore empty state file: {self.file}")
+            data = ""
 
         if data:
             data = from_json(data) or []
@@ -156,14 +149,12 @@ class Stateful(StoreTable):
 
         self.deserialize(data)
 
-
     # Serialization
     # ----------------
 
     def commit(self):
         log(f"Save state in {self.file}")
         write_file(self.file, to_json(self.serialize()))
-
 
     def serialize(self):
         ret = []
@@ -187,7 +178,7 @@ class Stateful(StoreTable):
         for rec in self._db:
             if rec == record:
                 ret.append(rec)
-        
+
         return ret
 
     def query(self, name=None, domain=None, owner=None, record=None):
@@ -199,15 +190,15 @@ class Stateful(StoreTable):
         else:
             matches = self._db
 
-        #Limit results
+        # Limit results
         filters = {
-                'name': name,
-                'owner': owner,
-                'domain': domain,
-                }
+            "name": name,
+            "owner": owner,
+            "domain": domain,
+        }
         for key, val in filters.items():
             if val is not None:
-                matches = [rec for rec in matches if getattr(rec, key) == val ]
+                matches = [rec for rec in matches if getattr(rec, key) == val]
 
         return matches
 
@@ -217,28 +208,23 @@ class Stateful(StoreTable):
     def add(self, record):
         "Add hook"
         self._db.append(record)
-        #self.commit()
+        # self.commit()
 
     def rename(self, domain, old_name, new_name):
         "Rename hook"
-        assert False, 'Rename is not implemented'
+        assert False, "Rename is not implemented"
 
     def remove(self, record):
         "Remove hook"
-        self._db = [ rec for rec in self._db if rec != record]
-        #self.commit()
-
-
-
-
-
-
+        self._db = [rec for rec in self._db if rec != record]
+        # self.commit()
 
 
 ### NEW FILE: stores.py
 
 # StoreManagement
 # ==================
+
 
 class StoreInst:
     "Single StoreInst"
@@ -250,8 +236,7 @@ class StoreInst:
         self.conf = conf or {}
 
         if self.settings.stateful:
-            self.add_table('stateful', Stateful(name))
-
+            self.add_table("stateful", Stateful(name))
 
     def add_table(self, name, value):
         self._tables[name] = value
@@ -267,10 +252,10 @@ class StoreInst:
                 func = getattr(table, method)
 
                 if func:
-                    #print ("PROXY TABLE", method, table_name, args, kwargs)
+                    # print ("PROXY TABLE", method, table_name, args, kwargs)
                     func(*args, **kwargs)
                 else:
-                    print ("FAILED PROXY TABLE", method, table_name, args, kwargs)
+                    print("FAILED PROXY TABLE", method, table_name, args, kwargs)
                     assert False
 
     def prepare(self):
@@ -291,7 +276,6 @@ class StoreInst:
         self._proxy_tables("remove", *args)
 
     def query(self, *args, aggregate=False, **kwargs):
-
         if aggregate:
             ret = []
             for table_name, table in self._tables.items():
@@ -324,7 +308,8 @@ class StoreMgr:
         self.tables_conf = confs or dict(self.confs)
         self.settings = settings or {}
         self._stores = {
-            name: StoreInst(name, conf, settings=self.settings) for name, conf in self.tables_conf.items()
+            name: StoreInst(name, conf, settings=self.settings)
+            for name, conf in self.tables_conf.items()
         }
 
     def _filter_stores(self, store_names):
@@ -344,10 +329,10 @@ class StoreMgr:
         for store_name, store in self._filter_stores(store_names):
             func = getattr(store, method)
             if func:
-                #print ("PROXY STORE", method, store_names, args, kwargs)
+                # print ("PROXY STORE", method, store_names, args, kwargs)
                 func(*args, **kwargs)
             else:
-                print ("FAILED PROXY STORE", method, store_names, args, kwargs)
+                print("FAILED PROXY STORE", method, store_names, args, kwargs)
                 assert False
 
     def add(self, store_names, *args, **kwargs):
@@ -388,13 +373,11 @@ class StoreMgr:
         "Return session context"
 
         class Session:
-
             def __init__(self, mgr, store_names):
                 self.mgr = mgr
                 self.store_names = store_names
 
             def __enter__(self):
-
                 self.mgr._proxy_stores("prepare", self.store_names)
                 return self.mgr
 
@@ -402,4 +385,3 @@ class StoreMgr:
                 self.mgr._proxy_stores("commit", self.store_names)
 
         return Session(self, store_names)
-
