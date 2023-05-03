@@ -23,7 +23,7 @@ import gevent
 import urllib3
 import importlib
 
-from dockerns.tables import TableInstances
+from dockerns.tables import StoreMgr, BackendMgr, SourceMgr
 from dockerns.config import DockerNSConfig
 from dockerns.common import log
 
@@ -107,37 +107,22 @@ def main():
     # QUIET = False
     tmp = DockerNSConfig()
 
-    tables = TableInstances(confs=tmp.get_conf("tables"))
+    # Create stores
     wait_list = []
+    stores = StoreMgr(confs=tmp.get_conf("tables"))
 
-    # Start outputs
-    for output_name, output in tmp.get_conf("outputs").items():
-        driver = output.get("driver", None)
-        log("Loading output driver: %s" % driver)
-        if not driver:
-            continue
-        pkg_name = f"dockerns.output.{driver}"
-        mod = importlib.import_module(pkg_name)
-        output = mod.Output(tables, conf=output)
+    # Start backends
+    backends = BackendMgr(stores, confs=tmp.get_conf("outputs"))
+    wait_list.extend(backends.start())
 
-        output.start_svc()
+    #stores.debug()
 
     # Start sources
-    for src_name, src in tmp.get_conf("sources").items():
-        driver = src.get("driver", None)
-        if not driver:
-            continue
-        log("Loading source driver: %s" % driver)
-        pkg_name = f"dockerns.source.{driver}"
-        mod = importlib.import_module(pkg_name)
-        src = mod.Source(tables, conf=src)
+    sources = SourceMgr(stores, confs=tmp.get_conf("sources"))
+    wait_list.extend( sources.start() )
 
-        wait_list.append(gevent.spawn(src.monitor.start))
-
-    tables.debug()
-
+    log ("Background processes: %s" % wait_list)
     gevent.wait(wait_list)
-    return
 
 
 # def main2():

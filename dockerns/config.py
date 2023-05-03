@@ -13,12 +13,27 @@ DEFAULT_CONF = {
         "file_config": "config.yml",
         "log_level": "debug",
     },
+    "outputs": {
+        "embedded": {
+            "driver": "embedded",
+            "bind": "127.0.0.1:5358",
+            "resolvers": "8.8.8.8,8.8.4.4",
+            "recurse": True,
+            "records": ["default"],
+            "store": "default",
+        },
+        #"_stateful": {
+        #    "driver": "stateful",
+        #    "directory": "/tmp/dockerns",
+        #},
+    },
     "sources": {
         "cont": {
             "driver": "cont_base",
             "tables": ["default"],
             "docker": "unix:///var/run/docker.sock",
             "expose_ip": "12.12.12.15",  # DEPRECATED
+            "domain": "docker",  # DEPRECATED
             #'records': {
             #    'default': {
             #            'tld': 'docker',
@@ -40,16 +55,6 @@ DEFAULT_CONF = {
             "tld": "docker",
             #'tld': 'example.org',
             "cont_template": "JINJA_STR",
-        },
-    },
-    "outputs": {
-        "embedded": {
-            "driver": "embedded",
-            "bind": "127.0.0.1:5358",
-            "resolvers": "8.8.8.8,8.8.4.4",
-            "recurse": True,
-            "records": ["default"],
-            "table": "default",
         },
     },
 }

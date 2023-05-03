@@ -21,9 +21,13 @@ from pprint import pprint
 
 # libs
 import docker
+import gevent
 from gevent import monkey
 import urllib3
 from jinja2 import Template
+
+from dockerns.common import log, contains, get
+from dockerns.tables import SourceInst
 
 monkey.patch_all()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -41,7 +45,7 @@ EPILOG = """
 
 """
 
-Container = namedtuple("Container", "id, name, running, addrs")
+Record = namedtuple("Container", "id, name, domain, running, addrs")
 
 
 TEMPLATE_BASE = """
@@ -85,19 +89,37 @@ TEMPLATE_CUSTOM = """
 """
 
 
-# COMMON ???
-def log(msg, *args):
-    global QUIET
-    if not QUIET:
-        now = datetime.now().isoformat()
-        line = "%s [%s] %s\n" % (now, PROCESS, msg % args)
-        sys.stderr.write(line)
-        sys.stderr.flush()
+
+# Plugin entrypoint
+# =============
 
 
-def get(d, *keys):
-    empty = {}
-    return reduce(lambda d, k: d.get(k, empty), keys, d) or None
+class Plugin(SourceInst):
+#SourceInst
+#class Source:
+    "Reads events from Docker and updates the name table"
+
+    default_conf = {
+        "tables": ["default"],
+        "docker_socket": "unix:///var/run/docker.sock",
+        "expose_ip": "",
+        "domain": "docker",
+    }
+
+
+
+    def start_svc(self):
+
+        docker_uri = self.conf["docker_socket"]
+        mon = DockerMonitor(self, docker_uri)
+
+        return mon.start
+        #return gevent.spawn(mon.start)
+
+
+
+# Docker monitoring
+# =============
 
 
 def parse_config(str_conf):
@@ -122,54 +144,109 @@ def parse_config(str_conf):
     return ret
     # return SimpleNamespace(**ret)
 
-
-# Plugin entrypoint
-# =============
-
-
-class Source:
-    "Reads events from Docker and updates the name table"
-
-    default_conf = {
-        "tables": ["default"],
-        "docker_socket": "unix:///var/run/docker.sock",
-        "expose_ip": "",
-        "domain": "tld",
-    }
-
-    def __init__(self, tableMgr, conf=None):
-        self.tableMgr = tableMgr
-
-        _conf = dict(self.default_conf)
-        _conf.update(conf or {})
-        self.conf = _conf
-        docker_uri = _conf["docker_socket"]
-
-        self.monitor = DockerMonitor(self, docker_uri)
-
-
-# Docker monitoring
-# =============
-
-
 class ContainerInspect:
     "Expose container metadata"
 
-    def __init__(self, container):
+    def __init__(self, storeMgr, container):
         self.container = container
+        self.storeMgr = storeMgr
 
-        self._domain = "toto.com"
+        self._domain = ""
         self._default_ip = "1.2.3.4"
 
-        self._metadata()
+        self.metadata()
 
-    def _metadata(self):
-        "Return metadata"
+    # Record output
+    # -----------------
+    def get_records(self, domain=None):
+        "Get full details on this container from docker"
 
-        return self._metadata_extended()
-        # return self._metadata_base()
+        per_networks = False
+        per_ports =False
+        save_meta = False
+        do_reverses = False
 
-    def _metadata_base(self):
+        meta = SimpleNamespace(**self.metadata())
+        domain = domain or self._domain
+        #if domain:
+        #    domain = '.%s' % domain
+        assert isinstance(domain, str)
+
+        #pprint (meta)
+
+        # ensure name is valid, and append our domain
+        name = meta.name
+        if not name:
+            return None
+        id_ = meta.id
+        state = meta.running
+        #pprint (meta)
+
+        # Parse logic !!!!
+        ret = [Record(id_, meta.hostname, domain , state, meta.ip_addrs)]
+        for alias in self._get_names(name, meta.labels):
+            ret.append(Record(id_, alias, domain , state, meta.ip_addrs))
+
+
+            if per_networks:
+                # Loop over each networks
+                for net_name, net_ip in self._get_net_addrs(meta.raw_networks).items():
+                    net_alias = "%s.%s" % (net_name, alias)
+                    ret.append(Record(id_, net_alias, domain, state, [net_ip]))
+
+            if per_ports:
+                # Loop over each ports
+                for port_key, port_ips in meta.ports:
+                    port_rec = "%s.%s" % (port_key, alias)
+                    ret.append(Record(id_, port_rec, domain , state, port_ips))
+
+        # Genrate reverse
+        #pprint (ret)
+        if do_reverses:
+            arpa = []
+            for record in ret:
+                #record.domain
+                #record.name
+                for addr in record.addrs:
+                    rev_addr = ".".join(reversed(addr.split(".")))
+                    #print ("ARPAAAA", record, addr, rev_addr)
+                    #if not rev_addr:
+                    #    pprint (record)
+
+                    #    assert False
+                    rec = Record(id_, rev_addr, "in-addr.arpa", state, [record.name + domain] )
+                    arpa.append(rec)
+
+            ret.extend(arpa)
+
+        # Save recorded
+        if save_meta:
+            ret2 = []
+            for record in ret:
+                #record.name
+                #record.domain
+                #record.addrs
+
+                name = "meta.%s" % meta.hostname #record.name
+                #print ("ADD RECORD", name, record.name, record.addrs)
+                rec = Record(id_, name, record.domain , True, [record.name] )
+                ret2.append(rec)
+
+
+            ret.extend(ret2)
+        #print ("ARPA")
+        #pprint(ret)
+
+        return ret
+
+
+    def _get_net_addrs(self, networks):
+        return {name: value["IPAddress"] for name, value in networks.items()}
+
+    # Metadata extraction
+    # -----------------
+
+    def metadata(self, extended=True):
         # get full details on this container from docker
         # rec = self._docker.inspect_container(cid)
         rec = self.container
@@ -182,16 +259,16 @@ class ContainerInspect:
 
         uuid = get(rec, "Id")
         id_ = uuid[:12]
-        labels = get(rec, "Config", "Labels")
+        labels = get(rec, "Config", "Labels") or {}
         state = get(rec, "State", "Running")
 
         networks = get(rec, "NetworkSettings", "Networks")
         ip_addrs = self._get_addrs(networks)
+        assert ip_addrs, "Missing address for container !!!"
         ports = get(rec, "NetworkSettings", "Ports")
         ports = self._get_net_ports(ports)
-        "%s.%s" % (get(rec, "Config", "Hostname"), self._domain)
 
-        hostname = "%s.%s" % (get(rec, "Config", "Hostname"), self._domain)
+        hostname = get(rec, "Config", "Hostname")
 
         ret = {
             "uuid": uuid,
@@ -208,17 +285,16 @@ class ContainerInspect:
             "raw_networks": networks,
         }
 
+        if False and extended:
+            ret = self._metadata_extended(ret)
+
         return ret
 
-    def _metadata_extended(self):
-        # get full details on this container from docker
-        # rec = self._docker.inspect_container(cid)
+    def _metadata_extended(self, meta):
+        "Get full details on this container from docker"
 
-        meta = self._metadata_base()
-
-        # meta = self._metadata(cid)
         labels = meta["labels"]
-        # labels = get(rec, "Config", "Labels")
+       # pprint (labels)
 
         ret = {}
         prefix = "dockerns"
@@ -228,7 +304,7 @@ class ContainerInspect:
 
             # Split key label
             parts = name.split(".", 3)
-            instance = "docker"
+            instance = "default"
             name = None
             if len(parts) == 3:
                 instance = parts[1]
@@ -239,51 +315,25 @@ class ContainerInspect:
             conf = {
                 "instance": instance,
                 "name": name,
+                "type": 'A',
+                "uuid": meta['uuid'],
             }
-
-            # pprint (parse_config(value))
-
             conf.update(parse_config(value))
+            #rr = conf.get('data', None)
+            #if rr is None:
+            #    rr = '3.2.1.4'
+
+
+
+            # Save result
             ret[instance] = conf
 
         meta["custom"] = ret
 
+        #pprint (ret)
+
         return meta
 
-    def get_records(self):
-        "Get full details on this container from docker"
-
-        meta = SimpleNamespace(**self._metadata())
-
-        # ensure name is valid, and append our domain
-        name = meta.name
-        if not name:
-            return None
-
-        id_ = meta.id
-        labels = meta.labels
-        state = meta.running
-        networks = meta.raw_networks
-        ip_addrs = meta.ip_addrs
-        ports = meta.ports
-        hostname = meta.hostname
-
-        # Parse logic !!!!
-        ret = [Container(id_, hostname, state, ip_addrs)]
-        for alias in self._get_names(name, labels):
-            ret.append(Container(id_, alias, state, ip_addrs))
-
-            # Loop over each networks
-            for net_name, net_ip in self._get_net_addrs(networks).items():
-                net_alias = "%s.%s" % (net_name, alias)
-                ret.append(Container(id_, net_alias, state, [net_ip]))
-
-            # Loop over each ports
-            for port_key, port_ips in ports:
-                port_rec = "%s.%s" % (port_key, alias)
-                ret.append(Container(id_, port_rec, state, port_ips))
-
-        return ret
 
     def _get_name(self, name):
         name = RE_VALIDNAME.sub("", name).rstrip(".")
@@ -316,8 +366,6 @@ class ContainerInspect:
             for name, value in networks.items()
         }
 
-    def _get_net_addrs(self, networks):
-        return {name: value["IPAddress"] for name, value in networks.items()}
 
     def _get_net_ports(self, ports):
         ports = ports or {}
@@ -355,6 +403,7 @@ class ContainerInspect:
 
 
 class DockerMonitor:
+
     def __init__(self, parent, docker_uri):
         self.parent = parent
 
@@ -370,27 +419,31 @@ class DockerMonitor:
 
         # Init object
         self._docker = client
-        self.tableMgr = parent.tableMgr
+        self.storeMgr = parent.storeMgr
         self._tables = parent.conf["tables"]
         log("Working with tables: %s" % self._tables)
         self._domain = parent.conf["domain"].lstrip(".")
         self._default_ip = parent.conf["expose_ip"]
 
+
     def start(self):
         # start the event poller, but don't read from the stream yet
         events = self._docker.events()
+        domain = self._domain
 
         # bootstrap by inspecting all running containers
         for container in self._docker.containers():
-            cont = ContainerInspect(self._docker.inspect_container(container["Id"]))
-            meta = cont._metadata()
+            cont = ContainerInspect(self.storeMgr, self._docker.inspect_container(container["Id"]))
+            meta = cont.metadata()
 
             # for rec in self._inspect(container["Id"]):
-            for rec in cont.get_records():
+            for rec in cont.get_records(domain=self._domain):
                 if rec.running:
                     for addr in rec.addrs:
                         # WIPPP
-                        self.tableMgr.add(self._tables, rec.name, addr)
+                        self.storeMgr.add(self._tables, rec.domain, rec.name, addr)
+
+        #self.storeMgr.debug()
 
         # read the docker event stream and update the name table
         for raw in events:
@@ -399,35 +452,88 @@ class DockerMonitor:
                 cid = evt.get("id")
                 if cid is None:
                     cid = evt.get("ID")
-                log("new event %s: %s" % (evt.get("Type"), cid))
                 if cid is None:
                     continue
                 status = evt.get("status")
-                if status in set(("start", "die", "rename")):
+                log("new event %s: %s, %s" % (evt.get("Type"), cid, status))
+
+                changed = False
+                if status in set(("start", "rename")):
                     # try:
-                    cont = ContainerInspect(self._docker.inspect_container(cid))
+                    changed = True
+
+                    cont = self._docker.inspect_container(cid)
+                    cont = ContainerInspect(self.storeMgr, cont)
+                    #pprint (cont)
                     # for rec in self._inspect(cid):
-                    for rec in cont.get_records():
+                    #print ("EVENNNT")
+                    #pprint(evt)
+
+
+
+                    for rec in cont.get_records(domain=self._domain):
                         if status == "start":
                             for addr in rec.addrs:
-                                self.tableMgr.add(self._tables, rec.name, addr)
+                                self.storeMgr.add(self._tables, rec.domain, rec.name, addr)
                                 # self._table.add(rec.name, addr)
 
                         elif status == "rename":
                             old_name = get(evt, "Actor", "Attributes", "oldName")
                             new_name = get(evt, "Actor", "Attributes", "name")
-                            old_name = ".".join((old_name, self._domain))
-                            new_name = ".".join((new_name, self._domain))
-                            self.tableMgr.rename(self._tables, old_name, new_name)
+                            #old_name = ".".join((old_name, rec.domain))
+                            #new_name = ".".join((new_name, rec.domain))
+                            self.storeMgr.rename(self._tables, rec.domain, old_name, new_name)
                             # self._table.rename(old_name, new_name)
 
-                        else:
-                            self.tableMgr.remove(self._tables, rec.name)
-                            # self._table.remove(rec.name)
+                elif status == "die":
+                    #print ("DIE")
+                    changed = True
+
+                    cont = self._docker.inspect_container(cid)
+                    cont = ContainerInspect(self.storeMgr, cont)
+
+                    for rec in cont.get_records(domain=self._domain):
+                        # Skip arpa
+                        if rec.name:
+                            self.storeMgr.remove(self._tables, rec.domain, rec.name)
+
+
+                    # Fetch all IPs
+                    id_ = cid[:12]
+                    ip_map = self.storeMgr.get(self._tables, self._domain, id_)
+                    for table_name, table in ip_map.items():
+                        #all_ips = [ [ ip for ip in ips ] for ips in table.values() ]
+                        all_ips = []
+                        for ips in table.values():
+                            ips = ips or []
+                            for ip in ips:
+                                all_ips.append(ip)
+
+                    all_ips = list(set(all_ips))
+                    #pprint (all_ips)
+
+                    for ip in all_ips:
+                        #rev_ip = "%s.in-addr.arpa" % ".".join(reversed(addr.split(".")))
+                        rev_ip = ".".join(reversed(ip.split(".")))
+                        #print ("REMOVE ARPA", rev_ip)
+                        self.storeMgr.remove(self._tables, "in-addr.arpa", rev_ip)
+
+
+                    #try:
+                    #    assert False, "WIPPP"
+                    #    #self.storeMgr.remove(self._tables, rec.name)
+                    #    #for name in rec.name:
+                    #    print ("REMOVE RECORD", rec)
+#                       #     print ("REMOVE RECORD", rec.name)
+                    #    self.storeMgr.remove(self._tables, rec.domain, rec.name)
+                    #    # self._table.remove(rec.name)
 
                     # except Exception as e:
                     #    log("Error: %s", e)
 
-        ## WIPPP
-        log("DEBUG TABLLESSSSS")
-        self.tableMgr.debug()
+                if changed:
+                    # WIPPP
+                    log("Table content changes on event: %s" % status)
+                    self.storeMgr.debug()
+
+

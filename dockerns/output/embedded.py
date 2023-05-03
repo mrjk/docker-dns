@@ -17,7 +17,7 @@ from builtins import str
 from pprint import pprint
 
 # libs
-from dnslib import A, DNSHeader, DNSLabel, DNSRecord, PTR, QTYPE, RR
+from dnslib import A, DNSHeader, DNSLabel, DNSRecord, PTR, QTYPE, RR, CNAME
 import gevent
 from gevent import monkey
 
@@ -30,6 +30,7 @@ import urllib3
 
 
 from dockerns.common import log, contains
+from dockerns.tables import BackendInst
 
 monkey.patch_all()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -51,13 +52,9 @@ EPILOG = """
 
 """
 
-network_blacklist = os.environ.get("NETWORK_BLACKLIST")
-if not network_blacklist:
-    network_blacklist = "255.255.255.255/32"
 
-network_blacklist = network_blacklist.split()
-for i, network in enumerate(network_blacklist):
-    network_blacklist[i] = ip_network(network)
+# Plugin entrypoint
+# =============
 
 
 def stop(*servers):
@@ -65,6 +62,45 @@ def stop(*servers):
         if svr.started:
             svr.stop()
     sys.exit(signal.SIGINT)
+
+class Plugin(BackendInst):
+    "Store records in embedded DNS server"
+
+    default_conf = {
+        "bind": "127.0.0.1:5358",
+        #'resolvers': '8.8.8.8,8.8.4.4',
+        "resolvers": "8.8.8.8",
+        "recurse": True,
+        "records": ["default"],
+        "table": "default",
+    }
+
+    store_table_name = "dnspython"
+
+    def init_store(self):
+        return NameTable([])
+
+    def start_svc(self):
+        _conf = self.conf
+
+        log(
+            "Starting dns server on: %s (%s/%s)"
+            % (_conf["bind"], self.store_name, self.store_table_name)
+        )
+        resolvers = (_conf["resolvers"]) if _conf["recurse"] else ()
+        resolvers = ()
+
+        dns = DnsServer(_conf["bind"], self._table, resolvers)
+        gevent.signal_handler(signal.SIGINT, stop, dns)
+        gevent.signal_handler(signal.SIGTERM, stop, dns)
+
+        return dns.start
+        return gevent.spawn(dns.start)
+
+        #ret = dns.start()
+        #print ("IS IT EXECUTED SOMETIMES ?" , dns._spawn )
+        #return dns._spawn
+
 
 
 # Datastore Class
@@ -81,6 +117,25 @@ class NameTable:
         for rec in records:
             self.add(rec[0], rec[1])
 
+        self.network_blacklist = self.gen_bl() or []
+
+    def gen_bl(self, blacklist=None):
+        "Generate blacklist"
+
+        # temporary disabled
+        return []
+
+        network_blacklist = blacklist or os.environ.get("NETWORK_BLACKLIST")
+        if not network_blacklist:
+            network_blacklist = "255.255.255.255/32"
+
+        network_blacklist = network_blacklist.split()
+        for i, network in enumerate(network_blacklist):
+            network_blacklist[i] = ip_network(network)
+
+        return network_blacklist
+
+
     def debug(self):
         ret = {}  # dict(self._storage)
         for k, v in self._storage.items():
@@ -89,30 +144,43 @@ class NameTable:
 
         return ret
 
-    def add(self, name, addr):
+    def add(self, domain, name, addr):
         if name.startswith("."):
             name = "*" + name
+
+        if domain:
+            name = '.'.join([name, domain])
+
         key = self._key(name)
         if key:
             with self._lock:
-                for network in network_blacklist:
-                    if addr and ip_address(addr) in network:
-                        log(
-                            "skipping table.add %s -> %s (blacklisted network)",
-                            name,
-                            addr,
-                        )
-                        return
+                #for network in self.network_blacklist:
+                #    try:
+                #        if addr and ip_address(addr) in network:
+                #            log(
+                #                "skipping table.add %s -> %s (blacklisted network)",
+                #                name,
+                #                addr,
+                #            )
+                #            return
+                #    except ValueError as err:
+                #        print ("SKIPPED", addr)
+                #        continue
+
                 log("table.add %s -> %s", name, addr)
                 self._storage[key].add(addr)
 
                 # reverse map for PTR records
-                addr = "%s.in-addr.arpa" % ".".join(reversed(addr.split(".")))
-                key = self._key(addr)
-                log("table.add %s -> %s", addr, name)
-                self._storage[key].add(name)
+                #addr = "%s.in-addr.arpa" % ".".join(reversed(addr.split(".")))
+                #key = self._key(addr)
+                #log("table.add %s -> %s", addr, name)
+                #self._storage[key].add(name)
 
-    def get(self, name):
+    def get(self, name, domain=None):
+
+        if domain:
+            name = "%s.%s" % (name, domain)
+
         key = self._key(name)
         if key:
             with self._lock:
@@ -136,17 +204,35 @@ class NameTable:
                     log("table.get %s with NoneType" % (name))
                 return res
 
-    def rename(self, old_name, new_name):
+    def rename(self, domain, old_name, new_name):
         if not old_name or not new_name:
             return
+
+        if domain:
+            old_name = '.'.join([old_name, domain])
+
         old_name = old_name.lstrip("/")
         old_key = self._key(old_name)
-        new_key = self._key(new_name)
+        new_key = '.'.join([self._key(new_name), domain])
         with self._lock:
             self._storage[new_key] = self._storage.pop(old_key)
             log("table.rename (%s -> %s)", old_name, new_name)
 
-    def remove(self, name):
+    #def remove_ip(self, ip):
+    #    #if domain:
+    #    #    name = '.'.join([name, domain])
+
+
+    #    key = self._key(name)
+    #    if key:
+    #        with self._lock:
+    #            if key in self._storage:
+    #                log("table.remove %s", name)
+    #                del self._storage[key]
+
+    def remove(self, domain, name):
+        if domain:
+            name = '.'.join([name, domain])
         key = self._key(name)
         if key:
             with self._lock:
@@ -159,6 +245,7 @@ class NameTable:
             label = DNSLabel(name.lower()).label
             return label
         except Exception:
+            print ("FAIL HERER on", name)
             return None
 
 
@@ -215,7 +302,11 @@ class DnsServer(DatagramServer):
             DNSHeader(id=rec.header.id, qr=1, aa=auth, ra=bool(self._resolver)), q=rec.q
         )
         for addr in addrs:
-            reply.add_answer(RR(rec.q.qname, QTYPE.A, rdata=A(addr)))
+            try:
+                reply.add_answer(RR(rec.q.qname, QTYPE.A, rdata=A(addr)))
+            except ValueError:
+                reply.add_answer(RR(rec.q.qname, QTYPE.CNAME, rdata=CNAME(addr)))
+
         for name in names:
             reply.add_answer(RR(rec.q.qname, QTYPE.PTR, rdata=PTR(name)))
         return reply.pack()
@@ -244,52 +335,4 @@ class DnsServer(DatagramServer):
                 log(msg)
 
 
-# Plugin entrypoint
-# =============
 
-
-class Output:
-    "Store records in embedded DNS server"
-
-    default_conf = {
-        "bind": "127.0.0.1:53",
-        #'resolvers': '8.8.8.8,8.8.4.4',
-        "resolvers": "8.8.8.8",
-        "recurse": True,
-        "records": ["default"],
-        "table": "default",
-    }
-
-    def __init__(self, tableMgr, conf=None):
-        self.tableMgr = tableMgr
-        _conf = dict(self.default_conf)
-        _conf.update(conf or {})
-        self.conf = _conf
-
-        # Create table
-        self.create_table()
-
-    def create_table(self):
-        # Get table
-        table_name = self.conf.get("table", "default")
-        self.table_name = table_name
-
-        # Add methods
-        table = self.tableMgr.ensure(table_name)
-        pprint(table)
-        table._tables["dnspython"] = NameTable([])
-        self._table = table._tables["dnspython"]
-
-    def start_svc(self):
-        _conf = self.conf
-
-        log(
-            "Starting dns server on: %s (%s/dnspython)"
-            % (_conf["bind"], self.table_name)
-        )
-        resolvers = (_conf["resolvers"]) if _conf["recurse"] else ()
-
-        dns = DnsServer(_conf["bind"], self._table, resolvers)
-        gevent.signal_handler(signal.SIGINT, stop, dns)
-        gevent.signal_handler(signal.SIGTERM, stop, dns)
-        dns.start()

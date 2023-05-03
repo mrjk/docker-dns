@@ -19,6 +19,7 @@ This is a fork of [phensley/docker-dns](https://github.com/phensley/docker-dns).
     * Create concept of input/output and tables
 
 
+Note: This project might be called: `docker-dns` -> `dockerns` -> `DaeNS`
 
 ## Usage
 
