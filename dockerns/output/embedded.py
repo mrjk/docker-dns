@@ -1,10 +1,4 @@
-#!/usr/bin/env python
-
-
-# dockerdns - simple, automatic, self-contained dns server for docker
-
-# monkey patch everything
-
+"Embedded DNS server"
 
 # core
 import os
@@ -18,7 +12,6 @@ from pprint import pprint
 
 # libs
 from dnslib import A, DNSHeader, DNSLabel, DNSRecord, PTR, QTYPE, RR, CNAME
-import gevent
 
 # from gevent import monkey
 
@@ -39,20 +32,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Import local libs
 
-
-# from lib.tables import NameTable
-
-DOCKERNS_CONFIG = os.environ.get("DOCKERNS_CONFIG_FILE", "config.yml")
-PROCESS = "dockerdns"
-DOCKER_SOCK = "unix:///docker.sock"
-DNS_BINDADDR = "0.0.0.0:53"
 DNS_RESOLVER = ["8.8.8.8"]
 DNS_RESOLVER_TIMEOUT = 3.0
-RE_VALIDNAME = re.compile("[^\w\d.-]")
-QUIET = 0
-EPILOG = """
-
-"""
 
 
 # Plugin entrypoint
@@ -94,15 +75,10 @@ class Plugin(BackendInst):
         resolvers = ()
 
         dns = DnsServer(_conf["bind"], self._table, resolvers)
-        gevent.signal_handler(signal.SIGINT, stop, dns)
-        gevent.signal_handler(signal.SIGTERM, stop, dns)
+        # gevent.signal_handler(signal.SIGINT, stop, dns)
+        # gevent.signal_handler(signal.SIGTERM, stop, dns)
 
         return dns.start
-        return gevent.spawn(dns.start)
-
-        # ret = dns.start()
-        # print ("IS IT EXECUTED SOMETIMES ?" , dns._spawn )
-        # return dns._spawn
 
 
 # Datastore Class
@@ -115,7 +91,7 @@ class NameTable(StoreTable):
     "Table mapping names to addresses"
 
     def __init__(self, records):
-        self._storage = defaultdict(set)
+        self._db = defaultdict(set)
         self._lock = threading.Lock()
         for rec in records:
             self.add(rec[0], rec[1])
@@ -139,17 +115,19 @@ class NameTable(StoreTable):
         return network_blacklist
 
     def debug(self):
-        ret = {}  # dict(self._storage)
-        for k, v in self._storage.items():
+        "Dump content of the DB"
+        ret = {}
+        for k, v in self._db.items():
             name = ".".join([t.decode() for t in k])
             ret[name] = v
 
         return ret
 
     def add(self, record):
+        "Add record to DB"
+
         domain = record.domain
         name = record.name
-        # addr = record.rr
 
         if name.startswith("."):
             name = "*" + name
@@ -175,26 +153,22 @@ class NameTable(StoreTable):
 
                 for addr in record.rr:
                     log("table.add %s -> %s", name, addr)
-                    self._storage[key].add(addr)
-
-                # reverse map for PTR records
-                # addr = "%s.in-addr.arpa" % ".".join(reversed(addr.split(".")))
-                # key = self._key(addr)
-                # log("table.add %s -> %s", addr, name)
-                # self._storage[key].add(name)
+                    self._db[key].add(addr)
 
     def get(self, name, domain=None):
+        "Retrieve record from DB"
+
         if domain:
             name = "%s.%s" % (name, domain)
 
         key = self._key(name)
         if key:
             with self._lock:
-                res = self._storage.get(key)
+                res = self._db.get(key)
 
                 wild = re.sub(r"^[^\.]+", "*", name)
                 wildkey = self._key(wild)
-                wildres = self._storage.get(wildkey)
+                wildres = self._db.get(wildkey)
 
                 if res:
                     log(
@@ -211,6 +185,8 @@ class NameTable(StoreTable):
                 return res
 
     def rename(self, domain, old_name, new_name):
+        "Rename record from DB"
+
         if not old_name or not new_name:
             return
 
@@ -221,10 +197,11 @@ class NameTable(StoreTable):
         old_key = self._key(old_name)
         new_key = ".".join([self._key(new_name), domain])
         with self._lock:
-            self._storage[new_key] = self._storage.pop(old_key)
+            self._db[new_key] = self._db.pop(old_key)
             log("table.rename (%s -> %s)", old_name, new_name)
 
     def remove(self, record, rr=None):
+        "Remove record from DB"
         domain = record.domain
         name = record.name
         rr = rr or record.rr
@@ -236,22 +213,24 @@ class NameTable(StoreTable):
             with self._lock:
                 # Remove the whole entry
                 if rr is None:
-                    if key in self._storage:
+                    if key in self._db:
                         log("table.remove %s", name)
-                        del self._storage[key]
+                        del self._db[key]
 
                 # Remove specific records
-                elif key in self._storage:
+                elif key in self._db:
                     # Remove records one by one
                     for val in rr:
                         log("table.remove %s->%s" % (name, val))
-                        self._storage[key].remove(val)
+                        self._db[key].remove(val)
 
                     # Cleanup empty entries
-                    if not self._storage[key]:
-                        del self._storage[key]
+                    if not self._db[key]:
+                        del self._db[key]
 
     def _key(self, name):
+        "Retrieve a domain key"
+
         try:
             label = DNSLabel(name.lower()).label
             return label
@@ -281,6 +260,8 @@ class DnsServer(DatagramServer):
             )
 
     def handle(self, data, peer):
+        "Handle DNS replies"
+
         rec = DNSRecord.parse(data)
         addrs = set()
         names = set()
@@ -309,6 +290,8 @@ class DnsServer(DatagramServer):
         self.socket.sendto(self._reply(rec, auth, addrs, names), peer)
 
     def _reply(self, rec, auth, addrs, names):
+        "Craft DNS replies"
+
         reply = DNSRecord(
             DNSHeader(id=rec.header.id, qr=1, aa=auth, ra=bool(self._resolver)), q=rec.q
         )

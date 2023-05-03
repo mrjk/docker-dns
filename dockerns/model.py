@@ -1,24 +1,13 @@
-#!/usr/bin/env python
+"Daens Core components"
 
-
-# dockerdns - simple, automatic, self-contained dns server for docker
-
-
-# python 3 compatibility
-
-# core
-from pprint import pprint
-
-# from gevent import monkey
-import urllib3
+# Imports
 import importlib
 import gevent
 
+from pprint import pprint
+
 # Import local libs
 from dockerns.common import log
-
-# monkey.patch_all()
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # BackendMangement

@@ -1,24 +1,11 @@
-#!/usr/bin/env python
+"Table management"
 
-
-# dockerdns - simple, automatic, self-contained dns server for docker
-
-
-# python 3 compatibility
-
-# core
+# Imports
 import os
 from pprint import pprint
 
-# from gevent import monkey
-import urllib3
-
 # Import local libs
 from dockerns.common import log, read_file, from_json, to_json, write_file
-
-# monkey.patch_all()
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
 
 # Record
 # ==================
@@ -83,7 +70,7 @@ class StoreTable:
         "Debug hook"
         return self._db
 
-    #    # CRUD methods
+    # CRUD methods
     def query(self, name=None, domain=None, owner=None, record=None):
         "Get hook"
         return None
@@ -208,7 +195,6 @@ class Stateful(StoreTable):
     def add(self, record):
         "Add hook"
         self._db.append(record)
-        # self.commit()
 
     def rename(self, domain, old_name, new_name):
         "Rename hook"
@@ -217,7 +203,6 @@ class Stateful(StoreTable):
     def remove(self, record):
         "Remove hook"
         self._db = [rec for rec in self._db if rec != record]
-        # self.commit()
 
 
 ### NEW FILE: stores.py
@@ -294,7 +279,6 @@ class StoreInst:
             "records": {
                 key: val.debug() or "<NO RECORDS>" for key, val in self._tables.items()
             },
-            #'_tables': { key: val.debug() for key, val in self._tables.items() },
         }
         return ret or "<NO RECORDS>"
 
