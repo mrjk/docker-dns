@@ -21,7 +21,6 @@ import argparse
 # libs
 import gevent
 import urllib3
-import importlib
 
 from dockerns.tables import StoreMgr, BackendMgr, SourceMgr
 from dockerns.config import DockerNSConfig
@@ -115,13 +114,13 @@ def main():
     backends = BackendMgr(stores, confs=tmp.get_conf("outputs"))
     wait_list.extend(backends.start())
 
-    #stores.debug()
+    # stores.debug()
 
     # Start sources
     sources = SourceMgr(stores, confs=tmp.get_conf("sources"))
-    wait_list.extend( sources.start() )
+    wait_list.extend(sources.start())
 
-    log ("Background processes: %s" % wait_list)
+    log("Background processes: %s" % wait_list)
     gevent.wait(wait_list)
 
 

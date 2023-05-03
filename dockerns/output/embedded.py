@@ -19,12 +19,13 @@ from pprint import pprint
 # libs
 from dnslib import A, DNSHeader, DNSLabel, DNSRecord, PTR, QTYPE, RR, CNAME
 import gevent
-from gevent import monkey
+
+# from gevent import monkey
 
 from gevent import socket, threading
 from gevent.server import DatagramServer
 from gevent.resolver.ares import Resolver
-from ipaddress import ip_network, ip_address
+from ipaddress import ip_network  # , ip_address
 
 import urllib3
 
@@ -32,7 +33,7 @@ import urllib3
 from dockerns.common import log, contains
 from dockerns.tables import BackendInst
 
-monkey.patch_all()
+# monkey.patch_all()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Import local libs
@@ -62,6 +63,7 @@ def stop(*servers):
         if svr.started:
             svr.stop()
     sys.exit(signal.SIGINT)
+
 
 class Plugin(BackendInst):
     "Store records in embedded DNS server"
@@ -97,10 +99,9 @@ class Plugin(BackendInst):
         return dns.start
         return gevent.spawn(dns.start)
 
-        #ret = dns.start()
-        #print ("IS IT EXECUTED SOMETIMES ?" , dns._spawn )
-        #return dns._spawn
-
+        # ret = dns.start()
+        # print ("IS IT EXECUTED SOMETIMES ?" , dns._spawn )
+        # return dns._spawn
 
 
 # Datastore Class
@@ -135,7 +136,6 @@ class NameTable:
 
         return network_blacklist
 
-
     def debug(self):
         ret = {}  # dict(self._storage)
         for k, v in self._storage.items():
@@ -149,12 +149,12 @@ class NameTable:
             name = "*" + name
 
         if domain:
-            name = '.'.join([name, domain])
+            name = ".".join([name, domain])
 
         key = self._key(name)
         if key:
             with self._lock:
-                #for network in self.network_blacklist:
+                # for network in self.network_blacklist:
                 #    try:
                 #        if addr and ip_address(addr) in network:
                 #            log(
@@ -171,13 +171,12 @@ class NameTable:
                 self._storage[key].add(addr)
 
                 # reverse map for PTR records
-                #addr = "%s.in-addr.arpa" % ".".join(reversed(addr.split(".")))
-                #key = self._key(addr)
-                #log("table.add %s -> %s", addr, name)
-                #self._storage[key].add(name)
+                # addr = "%s.in-addr.arpa" % ".".join(reversed(addr.split(".")))
+                # key = self._key(addr)
+                # log("table.add %s -> %s", addr, name)
+                # self._storage[key].add(name)
 
     def get(self, name, domain=None):
-
         if domain:
             name = "%s.%s" % (name, domain)
 
@@ -209,19 +208,18 @@ class NameTable:
             return
 
         if domain:
-            old_name = '.'.join([old_name, domain])
+            old_name = ".".join([old_name, domain])
 
         old_name = old_name.lstrip("/")
         old_key = self._key(old_name)
-        new_key = '.'.join([self._key(new_name), domain])
+        new_key = ".".join([self._key(new_name), domain])
         with self._lock:
             self._storage[new_key] = self._storage.pop(old_key)
             log("table.rename (%s -> %s)", old_name, new_name)
 
-    #def remove_ip(self, ip):
+    # def remove_ip(self, ip):
     #    #if domain:
     #    #    name = '.'.join([name, domain])
-
 
     #    key = self._key(name)
     #    if key:
@@ -232,7 +230,7 @@ class NameTable:
 
     def remove(self, domain, name):
         if domain:
-            name = '.'.join([name, domain])
+            name = ".".join([name, domain])
         key = self._key(name)
         if key:
             with self._lock:
@@ -245,7 +243,7 @@ class NameTable:
             label = DNSLabel(name.lower()).label
             return label
         except Exception:
-            print ("FAIL HERER on", name)
+            print("FAIL HERER on", name)
             return None
 
 
@@ -333,6 +331,3 @@ class DnsServer(DatagramServer):
             msg = str(e)
             if not contains(msg, "ETIMEOUT", "ENOTFOUND"):
                 log(msg)
-
-
-

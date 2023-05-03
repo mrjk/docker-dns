@@ -7,8 +7,6 @@
 # python 3 compatibility
 
 # core
-import os
-import re
 
 from pprint import pprint
 
@@ -17,17 +15,16 @@ import urllib3
 import importlib
 import gevent
 
-# monkey.patch_all()
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
 # Import local libs
 from dockerns.common import log
 
-
+# monkey.patch_all()
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # StoreManagement
 # ==================
+
 
 class StoreInst:
     "Single StoreInst"
@@ -64,8 +61,8 @@ class StoreInst:
     def remove_ip(self, domain, ip, arp=True):
         for table_name, table in self._tables.items():
             table.remove_ip(ip)
-            #if arp:
-            #    rev_ip = 
+            # if arp:
+            #    rev_ip =
             #    table.remove_ip(ip)
 
     # Other
@@ -74,18 +71,18 @@ class StoreInst:
     def debug(self):
         ret = {
             "obj": self.__dict__,
-            "records": {key: val.debug() or '<NO RECORDS>'  for key, val in self._tables.items()},
+            "records": {
+                key: val.debug() or "<NO RECORDS>" for key, val in self._tables.items()
+            },
             #'_tables': { key: val.debug() for key, val in self._tables.items() },
         }
-        return ret or '<NO RECORDS>'
+        return ret or "<NO RECORDS>"
 
 
 class StoreMgr:
     "StoreMgr"
 
-    confs = {
-            "default": {}
-            }
+    confs = {"default": {}}
 
     def __init__(self, confs=None):
         self.tables_conf = confs or dict(self.confs)
@@ -102,7 +99,6 @@ class StoreMgr:
                 continue
             ret[table_name] = table
         return ret.items()
-
 
     # Proxy functions
     # ---------------
@@ -128,7 +124,6 @@ class StoreMgr:
             ret[table_name] = table.get(domain, name)
         return ret
 
-
     # Helpers
     # ---------------
     def ensure(self, name):
@@ -149,7 +144,6 @@ class StoreMgr:
         return ret
 
 
-
 # BackendMangement
 # ==================
 
@@ -158,8 +152,8 @@ class PluginInst:
     "Plugin Instance"
 
     default_conf = {
-            "store": "default",
-            }
+        "store": "default",
+    }
 
     # Do not create if no name
     store_table_name = ""
@@ -178,31 +172,29 @@ class PluginInst:
         self.store_name = None
         self._table = None
 
-
         # Init store
         sname = self.conf.get("store", "default")
+        self.store_name = sname
+
         tname = self.store_table_name
         if tname:
-
             # Fetch store name
             store = self.storeMgr.ensure(sname)
             # Add plugins backend table
             table = store.add_table(tname, self.init_store())
 
             self._store = store
-            self.store_name = sname
             self._table = table
-
 
     def start_svc(self):
         "Start hook (TOFIX: Name), MUST RETURN A FUNCTION"
 
         def func():
-            print ("My one shot plugin")
+            print("My one shot plugin")
 
         return func
 
-    def init_store(self): 
+    def init_store(self):
         "Default store"
         return {}
 
@@ -226,7 +218,6 @@ class PluginMgr:
         "Allow local override hook"
         pass
 
-
     def start(self):
         "Init and start pluging background process"
         assert self._children is None
@@ -234,10 +225,9 @@ class PluginMgr:
         self._children = {}
         proclist = []
         for backend_name, _conf in self.confs.items():
-
             # Get config
             driver = _conf.get("driver", None)
-            store_name = _conf.get("store", "default")
+            # store_name = _conf.get("store", "default")
             if not driver:
                 continue
 
@@ -257,7 +247,6 @@ class PluginMgr:
 
             self._children[backend_name] = plugin
 
-
         self._proclist = proclist
         return proclist
 
@@ -265,13 +254,16 @@ class PluginMgr:
 # Overrides
 # ==================
 
+
 class BackendInst(PluginInst):
     "Backend Instance"
+
 
 class BackendMgr(PluginMgr):
     "Backend Manager"
 
     module_prefix = "dockerns.output."
+
 
 class SourceInst(PluginInst):
     "Source Instance"
@@ -281,4 +273,3 @@ class SourceMgr(PluginMgr):
     "Source Manager"
 
     module_prefix = "dockerns.source."
-

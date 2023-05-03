@@ -22,10 +22,10 @@ DEFAULT_CONF = {
             "records": ["default"],
             "store": "default",
         },
-        #"_stateful": {
+        # "_stateful": {
         #    "driver": "stateful",
         #    "directory": "/tmp/dockerns",
-        #},
+        # },
     },
     "sources": {
         "cont": {
