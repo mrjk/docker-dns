@@ -16,13 +16,15 @@ import re
 import sys
 from urllib.parse import urlparse
 import argparse
-
+from types import SimpleNamespace
+from pprint import pprint
 
 # libs
 import gevent
 import urllib3
 
-from dockerns.tables import StoreMgr, BackendMgr, SourceMgr
+from dockerns.tables import StoreMgr
+from dockerns.model import BackendMgr, SourceMgr
 from dockerns.config import DockerNSConfig
 from dockerns.common import log
 
@@ -101,27 +103,47 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
-    # global QUIET
-    # QUIET = False
-    tmp = DockerNSConfig()
 
-    # Create stores
-    wait_list = []
-    stores = StoreMgr(confs=tmp.get_conf("tables"))
+class App:
 
-    # Start backends
-    backends = BackendMgr(stores, confs=tmp.get_conf("outputs"))
-    wait_list.extend(backends.start())
+    def __init__(self):
 
-    # stores.debug()
+        _conf = DockerNSConfig()
+        self.settings = SimpleNamespace(**_conf.get_conf("config", {}))
 
-    # Start sources
-    sources = SourceMgr(stores, confs=tmp.get_conf("sources"))
-    wait_list.extend(sources.start())
+        pprint (self.settings)
 
-    log("Background processes: %s" % wait_list)
-    gevent.wait(wait_list)
+        self.conf = _conf
+
+
+    def cli(self):
+        # global QUIET
+        # QUIET = False
+
+
+        # Create stores
+        wait_list = []
+        stores = StoreMgr(
+                confs=self.conf.get_conf("tables", default={}),
+                settings=self.settings)
+
+        # Start backends
+        backends = BackendMgr(
+                self, stores,
+                confs=self.conf.get_conf("outputs", default={}),
+                settings=self.settings)
+        wait_list.extend(backends.start())
+
+        # Start sources
+        sources = SourceMgr(
+                self, stores,
+                confs=self.conf.get_conf("sources", default={}),
+                settings=self.settings)
+        wait_list.extend(sources.start())
+
+        # Wait for background processes
+        log("Background processes: %s" % wait_list)
+        gevent.wait(wait_list)
 
 
 # def main2():
@@ -157,5 +179,11 @@ def main():
 #     dns.start()
 #     gevent.wait([gevent.spawn(monitor.run)])
 
+def main():
+    app = App()
+    app.cli()
+
+
 if __name__ == "__main__":
     main()
+

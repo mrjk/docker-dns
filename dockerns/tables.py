@@ -7,7 +7,8 @@
 # python 3 compatibility
 
 # core
-
+import os
+from dataclasses import dataclass
 from pprint import pprint
 
 # from gevent import monkey
@@ -16,23 +17,241 @@ import importlib
 import gevent
 
 # Import local libs
-from dockerns.common import log
+from dockerns.common import log, read_file, from_json, to_json, write_file
 
 # monkey.patch_all()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
-# StoreManagement
+# Record
 # ==================
 
+class Record:
+    """Class for keeping track of a DNS record"""
+
+    default_conf = {
+        "domain": "",
+        "name": "",
+        "kind": "A",
+        "rr": None, # list
+
+        "reverse": True,
+
+        "owner": None,
+        "meta": None, # dict
+    }
+
+    def serialize(self):
+        ret = self.__dict__
+        return ret
+                
+
+    def __repr__(self):
+        return f"Record({self.name}.{self.domain}:{self.kind})"
+
+    def __init__(self, **kwargs):
+
+        conf = dict(self.default_conf)
+        conf.update(kwargs)
+        for key, value in conf.items():
+            setattr(self, key, value)
+
+        self.rr = self.rr or []
+        self.meta = self.meta or {}
+
+        assert self.domain, f"Invalid domain '{self.domain}' for: {self.__dict__}"
+        assert self.kind, f"Invalid kind '{self.kind}' for: {self.__dict__}"
+
+
+
+# StateManagement
+# ==================
+
+class StoreTable():
+    "Generic store table"
+
+    def __init__(self, conf=None, name=None):
+        "Default init signature"
+
+        # Init object
+        conf = dict(self.default_conf)
+        conf.update(conf or {})
+        self.conf = conf
+        self.name = name or 'default'
+
+        self._db = []
+        self._init()
+
+    def _init(self):
+        "Default init hook"
+
+    def debug(self):
+        "Debug hook"
+        return self._db
+
+#    # CRUD methods
+    def query(self, name=None, domain=None, owner=None, record=None):
+        "Get hook"
+        return None
+#
+#    def add(self, rec):
+#        "Add hook"
+#
+#    def rename(self, domain, old_name, new_name):
+#        "Rename hook"
+#
+#    def remove(self, rec):
+#        "Remove hook"
+#
+#
+#    # Serialization methods
+#    def serialize(self):
+#        "Serialize data"
+#
+#    def deserialize(self, payload):
+#        "Deserialize data"
+#
+    # Commit methods
+    def commit(self):
+        "Commit hook"
+
+    def prepare(self):
+        "Prepare hook"
+
+
+
+# Internal Tables
+# ==================
+
+class Stateful(StoreTable):
+    "Stateful store table"
+
+    default_conf = {
+        "directory": "/tmp/dockerns",
+    }
+
+
+    def _init(self):
+        # Load state DB from json file
+        self.file = os.path.join(self.conf.get("directory"), self.name + '.json' )
+        
+        if False:
+            self._read_file()
+
+
+    # Load from file
+    # ----------------
+    def _read_file(self):
+
+        try:
+            data = read_file(self.file)
+            log (f"Read store state from: {self.file}")
+        except FileNotFoundError as err:
+            data = ''
+
+        if data:
+            data = from_json(data) or []
+        else:
+            data = []
+
+        self.deserialize(data)
+
+
+    # Serialization
+    # ----------------
+
+    def commit(self):
+        log(f"Save state in {self.file}")
+        write_file(self.file, to_json(self.serialize()))
+
+
+    def serialize(self):
+        ret = []
+        for rec in self._db:
+            ret.append(rec.serialize())
+        return ret
+
+    def deserialize(self, payload):
+        assert isinstance(payload, list)
+        ret = []
+        for rec in payload:
+            ret.append(Record(**rec))
+        self._db = ret
+
+    # Table API - Queries
+    # ----------------
+
+    def get_record(self, record):
+        "Get exact record"
+        ret = []
+        for rec in self._db:
+            if rec == record:
+                ret.append(rec)
+        
+        return ret
+
+    def query(self, name=None, domain=None, owner=None, record=None):
+        "Get hook"
+
+        matches = []
+        if record:
+            matches = self.get_record(record)
+        else:
+            matches = self._db
+
+        #Limit results
+        filters = {
+                'name': name,
+                'owner': owner,
+                'domain': domain,
+                }
+        for key, val in filters.items():
+            if val is not None:
+                matches = [rec for rec in matches if getattr(rec, key) == val ]
+
+        return matches
+
+    # Table API - CRUD
+    # ----------------
+
+    def add(self, record):
+        "Add hook"
+        self._db.append(record)
+        #self.commit()
+
+    def rename(self, domain, old_name, new_name):
+        "Rename hook"
+        assert False, 'Rename is not implemented'
+
+    def remove(self, record):
+        "Remove hook"
+        self._db = [ rec for rec in self._db if rec != record]
+        #self.commit()
+
+
+
+
+
+
+
+
+### NEW FILE: stores.py
+
+# StoreManagement
+# ==================
 
 class StoreInst:
     "Single StoreInst"
 
-    def __init__(self, name, conf=None):
+    def __init__(self, name, conf=None, settings=None):
+        self.settings = settings or {}
         self._tables = {}
         self.name = name
         self.conf = conf or {}
+
+        if self.settings.stateful:
+            self.add_table('stateful', Stateful(name))
+
 
     def add_table(self, name, value):
         self._tables[name] = value
@@ -40,33 +259,50 @@ class StoreInst:
 
     # Proxy functions
     # ---------------
-    def add(self, domain, name, address):
-        for table_name, table in self._tables.items():
-            table.add(domain, name, address)
 
-    def rename(self, domain, old_name, new_name):
+    def _proxy_tables(self, method, *args, tables=None, **kwargs):
+        tables = tables or list(self._tables.keys())
         for table_name, table in self._tables.items():
-            table.rename(domain, old_name, new_name)
+            if not table or table_name in tables:
+                func = getattr(table, method)
 
-    def remove(self, domain, name):
-        for table_name, table in self._tables.items():
-            table.remove(domain, name)
+                if func:
+                    #print ("PROXY TABLE", method, table_name, args, kwargs)
+                    func(*args, **kwargs)
+                else:
+                    print ("FAILED PROXY TABLE", method, table_name, args, kwargs)
+                    assert False
 
-    def get(self, domain, name, aggregate=False):
-        ret = {}
-        for table_name, table in self._tables.items():
-            ret[table_name] = table.get(name, domain=domain)
+    def prepare(self):
+        "prepare hook"
+        self._proxy_tables("prepare")
+
+    def commit(self):
+        "commit hook"
+        self._proxy_tables("commit")
+
+    def add(self, *args):
+        self._proxy_tables("add", *args)
+
+    def rename(self, *args):
+        self._proxy_tables("rename", *args)
+
+    def remove(self, *args):
+        self._proxy_tables("remove", *args)
+
+    def query(self, *args, aggregate=False, **kwargs):
+
+        if aggregate:
+            ret = []
+            for table_name, table in self._tables.items():
+                rec = table.query(*args, **kwargs)
+                if rec and rec not in ret:
+                    ret.extend(rec)
+        else:
+            ret = {}
+            for table_name, table in self._tables.items():
+                ret[table_name] = table.query(*args, **kwargs)
         return ret
-
-    def remove_ip(self, domain, ip, arp=True):
-        for table_name, table in self._tables.items():
-            table.remove_ip(ip)
-            # if arp:
-            #    rev_ip =
-            #    table.remove_ip(ip)
-
-    # Other
-    # ---------------
 
     def debug(self):
         ret = {
@@ -84,16 +320,18 @@ class StoreMgr:
 
     confs = {"default": {}}
 
-    def __init__(self, confs=None):
+    def __init__(self, confs=None, settings=None):
         self.tables_conf = confs or dict(self.confs)
+        self.settings = settings or {}
         self._stores = {
-            name: StoreInst(name, conf) for name, conf in self.tables_conf.items()
+            name: StoreInst(name, conf, settings=self.settings) for name, conf in self.tables_conf.items()
         }
 
-    def _filter_stores(self, tables):
+    def _filter_stores(self, store_names):
         # TOFIX: Yield this please
+        assert isinstance(store_names, list)
         ret = {}
-        for table_name in tables:
+        for table_name in store_names:
             table = self._stores.get(table_name, None)
             if not table:
                 continue
@@ -102,33 +340,36 @@ class StoreMgr:
 
     # Proxy functions
     # ---------------
-    def add(self, tables, domain, name, address):
-        for table_name, table in self._filter_stores(tables):
-            table.add(domain, name, address)
+    def _proxy_stores(self, method, store_names, *args, **kwargs):
+        for store_name, store in self._filter_stores(store_names):
+            func = getattr(store, method)
+            if func:
+                #print ("PROXY STORE", method, store_names, args, kwargs)
+                func(*args, **kwargs)
+            else:
+                print ("FAILED PROXY STORE", method, store_names, args, kwargs)
+                assert False
 
-    def rename(self, tables, domain, name, new_name):
-        for table_name, table in self._filter_stores(tables):
-            table.rename(domain, name, new_name)
+    def add(self, store_names, *args, **kwargs):
+        self._proxy_stores("add", store_names, *args, **kwargs)
 
-    def remove(self, tables, domain, name):
-        for table_name, table in self._filter_stores(tables):
-            table.remove(domain, name)
+    def rename(self, store_names, *args, **kwargs):
+        self._proxy_stores("rename", store_names, *args, **kwargs)
 
-    def remove_ip(self, tables, domain, name):
-        for table_name, table in self._filter_stores(tables):
-            table.remove_ip(domain, name)
+    def remove(self, store_names, *args, **kwargs):
+        self._proxy_stores("remove", store_names, *args, **kwargs)
 
-    def get(self, tables, domain, name):
+    def query(self, store_names, *args, **kwargs):
         ret = {}
-        for table_name, table in self._filter_stores(tables):
-            ret[table_name] = table.get(domain, name)
+        for table_name, table in self._filter_stores(store_names):
+            ret[table_name] = table.query(*args, **kwargs)
         return ret
 
     # Helpers
     # ---------------
     def ensure(self, name):
         if name not in self._stores:
-            self._stores[name] = StoreInst(name, {})
+            self._stores[name] = StoreInst(name, {}, settings=self.settings)
         return self._stores[name]
 
     def get_table(self, name):
@@ -143,133 +384,22 @@ class StoreMgr:
         pprint(ret, indent=2)
         return ret
 
+    def session(self, store_names):
+        "Return session context"
 
-# BackendMangement
-# ==================
+        class Session:
 
+            def __init__(self, mgr, store_names):
+                self.mgr = mgr
+                self.store_names = store_names
 
-class PluginInst:
-    "Plugin Instance"
+            def __enter__(self):
 
-    default_conf = {
-        "store": "default",
-    }
+                self.mgr._proxy_stores("prepare", self.store_names)
+                return self.mgr
 
-    # Do not create if no name
-    store_table_name = ""
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                self.mgr._proxy_stores("commit", self.store_names)
 
-    def __init__(self, storeMgr, conf=None):
-        "Default init signature"
+        return Session(self, store_names)
 
-        # Init object
-        self.storeMgr = storeMgr
-        conf = dict(self.default_conf)
-        conf.update(conf or {})
-        self.conf = conf
-
-        # Pre init
-        self._store = None
-        self.store_name = None
-        self._table = None
-
-        # Init store
-        sname = self.conf.get("store", "default")
-        self.store_name = sname
-
-        tname = self.store_table_name
-        if tname:
-            # Fetch store name
-            store = self.storeMgr.ensure(sname)
-            # Add plugins backend table
-            table = store.add_table(tname, self.init_store())
-
-            self._store = store
-            self._table = table
-
-    def start_svc(self):
-        "Start hook (TOFIX: Name), MUST RETURN A FUNCTION"
-
-        def func():
-            print("My one shot plugin")
-
-        return func
-
-    def init_store(self):
-        "Default store"
-        return {}
-
-
-class PluginMgr:
-    "Plugin Manager"
-
-    confs = {}
-    module_prefix = "dockerns."
-
-    def __init__(self, stores, confs=None):
-        self.stores = stores
-        self.confs = confs or self.confs
-
-        self._proclist = None
-        self._children = None
-
-        self._init()
-
-    def _init(self):
-        "Allow local override hook"
-        pass
-
-    def start(self):
-        "Init and start pluging background process"
-        assert self._children is None
-
-        self._children = {}
-        proclist = []
-        for backend_name, _conf in self.confs.items():
-            # Get config
-            driver = _conf.get("driver", None)
-            # store_name = _conf.get("store", "default")
-            if not driver:
-                continue
-
-            # Load python module
-            pkg_name = f"{self.module_prefix}{driver}"
-            mod = importlib.import_module(pkg_name)
-
-            # Create plugin instance
-            log("Loading plugin: %s" % pkg_name)
-            plugin = mod.Plugin(self.stores, conf=_conf)
-
-            # Start background process, must return a function/callable, or skipped
-            func = plugin.start_svc()
-            if callable(func):
-                proc = gevent.spawn(func)
-                proclist.append(proc)
-
-            self._children[backend_name] = plugin
-
-        self._proclist = proclist
-        return proclist
-
-
-# Overrides
-# ==================
-
-
-class BackendInst(PluginInst):
-    "Backend Instance"
-
-
-class BackendMgr(PluginMgr):
-    "Backend Manager"
-
-    module_prefix = "dockerns.output."
-
-
-class SourceInst(PluginInst):
-    "Source Instance"
-
-
-class SourceMgr(PluginMgr):
-    "Source Manager"
-
-    module_prefix = "dockerns.source."

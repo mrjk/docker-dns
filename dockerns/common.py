@@ -1,5 +1,8 @@
+import os
 import sys
 import re
+import json
+import yaml
 from functools import reduce
 from datetime import datetime
 
@@ -34,3 +37,56 @@ def splitrecord(rec):
 
 def contains(txt, *subs):
     return any(s in txt for s in subs)
+
+# TODO: add tests
+def from_yaml(string):
+    "Transform YAML string to python dict"
+    return yaml.safe_load(string)
+
+
+# TODO: add tests
+def to_yaml(obj, headers=False):
+    "Transform obj to YAML"
+    options = {}
+    return yaml.safe_dump(data)
+
+
+# TODO: add tests
+def to_json(obj, nice=True):
+    "Transform JSON string to python dict"
+    if nice:
+        return json.dumps(obj, indent=2)
+    return json.dumps(obj)
+
+
+# TODO: add tests
+def from_json(string):
+    "Transform JSON string to python dict"
+    return json.loads(string)
+
+
+# TODO: add tests
+def to_dict(obj):
+    """Transform JSON obj/string to python dict
+
+    Useful to transofmr nested dicts as well"""
+    if not isinstance(obj, str):
+        obj = json.dumps(obj)
+    return json.loads(obj)
+
+def read_file(file):
+    "Read file content"
+    with open(file, encoding="utf-8") as _file:
+        return "".join(_file.readlines())
+
+
+def write_file(file, content):
+    "Write content to file"
+
+    file_folder = os.path.dirname(file)
+    if not os.path.exists(file_folder):
+        os.makedirs(file_folder)
+
+    with open(file, "w", encoding="utf-8") as _file:
+        _file.write(content)
+

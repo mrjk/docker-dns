@@ -11,7 +11,9 @@ DEFAULT_CONF = {
     },
     "config": {
         "file_config": "config.yml",
-        "log_level": "debug",
+        "log_level": "info",
+        "verbose": True,
+        "stateful": True,
     },
     "outputs": {
         "embedded": {
@@ -22,10 +24,6 @@ DEFAULT_CONF = {
             "records": ["default"],
             "store": "default",
         },
-        # "_stateful": {
-        #    "driver": "stateful",
-        #    "directory": "/tmp/dockerns",
-        # },
     },
     "sources": {
         "cont": {
@@ -43,19 +41,19 @@ DEFAULT_CONF = {
             #    },
             # },
         },
-        "tables": {
-            "default": {
-                "tld": "docker",
-                "cont_template": "JINJA_STR",
-                # NOLOGIC HERE ! 'reverse': True,
-                # NOLOGIC HERE ! 'parse_labels': True,
-            },
-        },
-        "other": {
-            "tld": "docker",
-            #'tld': 'example.org',
-            "cont_template": "JINJA_STR",
-        },
+        #"tables": {
+        #    "default": {
+        #        "tld": "docker",
+        #        "cont_template": "JINJA_STR",
+        #        # NOLOGIC HERE ! 'reverse': True,
+        #        # NOLOGIC HERE ! 'parse_labels': True,
+        #    },
+        #},
+        #"other": {
+        #    "tld": "docker",
+        #    #'tld': 'example.org',
+        #    "cont_template": "JINJA_STR",
+        #},
     },
 }
 
@@ -110,20 +108,20 @@ class DockerNSConfig:
             parser.add_argument(opt_name, default=value, help="NOHELP")
 
         ret = dict(parser.parse_args().__dict__)
-        pprint(ret)
+        #pprint(ret)
         return ret
 
     # Assemble configs
     # ==========================
 
-    def get_conf(self, pattern, conf=None):
+    def get_conf(self, pattern, conf=None, default=None):
         "Return a key config"
 
         _conf = conf or self._conf
         for part in pattern.split("."):
             if isinstance(_conf, dict):
                 _conf = _conf.get(part, None)
-        return _conf
+        return _conf or default
 
     def init_conf(self):
         conf_default = self.conf_from_defaults()

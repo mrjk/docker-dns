@@ -31,7 +31,8 @@ import urllib3
 
 
 from dockerns.common import log, contains
-from dockerns.tables import BackendInst
+from dockerns.tables import StoreTable
+from dockerns.model import BackendInst
 
 # monkey.patch_all()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -109,7 +110,8 @@ class Plugin(BackendInst):
 
 
 # Maybe this class should be stored somewhere else ...
-class NameTable:
+# Should be inherited from: StoreTable
+class NameTable(StoreTable):
     "Table mapping names to addresses"
 
     def __init__(self, records):
@@ -144,7 +146,12 @@ class NameTable:
 
         return ret
 
-    def add(self, domain, name, addr):
+
+    def add(self, record):
+        domain = record.domain
+        name = record.name
+        # addr = record.rr
+
         if name.startswith("."):
             name = "*" + name
 
@@ -167,8 +174,9 @@ class NameTable:
                 #        print ("SKIPPED", addr)
                 #        continue
 
-                log("table.add %s -> %s", name, addr)
-                self._storage[key].add(addr)
+                for addr in record.rr:
+                    log("table.add %s -> %s", name, addr)
+                    self._storage[key].add(addr)
 
                 # reverse map for PTR records
                 # addr = "%s.in-addr.arpa" % ".".join(reversed(addr.split(".")))
@@ -217,26 +225,34 @@ class NameTable:
             self._storage[new_key] = self._storage.pop(old_key)
             log("table.rename (%s -> %s)", old_name, new_name)
 
-    # def remove_ip(self, ip):
-    #    #if domain:
-    #    #    name = '.'.join([name, domain])
+    def remove(self, record, rr=None ):
+        domain = record.domain
+        name = record.name
+        rr = rr or record.rr
 
-    #    key = self._key(name)
-    #    if key:
-    #        with self._lock:
-    #            if key in self._storage:
-    #                log("table.remove %s", name)
-    #                del self._storage[key]
-
-    def remove(self, domain, name):
         if domain:
             name = ".".join([name, domain])
         key = self._key(name)
         if key:
             with self._lock:
-                if key in self._storage:
-                    log("table.remove %s", name)
-                    del self._storage[key]
+                
+                # Remove the whole entry
+                if rr is None:
+                    if key in self._storage:
+                        log("table.remove %s", name)
+                        del self._storage[key]
+
+                # Remove specific records
+                elif key in self._storage:
+                    # Remove records one by one
+                    for val in rr:
+                        log("table.remove %s->%s" % (name, val))
+                        self._storage[key].remove(val)
+
+                    # Cleanup empty entries
+                    if not self._storage[key]:
+                        del self._storage[key]
+
 
     def _key(self, name):
         try:

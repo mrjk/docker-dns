@@ -30,7 +30,8 @@ import urllib3
 # from jinja2 import Template
 
 from dockerns.common import log, get
-from dockerns.tables import SourceInst
+from dockerns.tables import Record
+from dockerns.model import SourceInst
 
 # monkey.patch_all()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -38,7 +39,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RE_VALIDNAME = re.compile("[^\w\d.-]")
 
-Record = namedtuple("Container", "id, name, domain, running, addrs")
+OldRecord = namedtuple("Container", "id, name, domain, running, addrs")
 
 
 TEMPLATE_BASE = """
@@ -150,10 +151,10 @@ class ContainerInspect:
     def get_records(self, domain=None):
         "Get full details on this container from docker"
 
-        per_networks = False
-        per_ports = False
+        per_networks = True
+        per_ports = True
         save_meta = False
-        do_reverses = False
+        do_reverses = True
 
         meta = SimpleNamespace(**self.metadata())
         domain = domain or self._domain
@@ -166,67 +167,82 @@ class ContainerInspect:
         # ensure name is valid, and append our domain
         name = meta.name
         if not name:
-            return None
-        id_ = meta.id
+            return []
+        id_ = meta.uuid
         state = meta.running
+        if meta.running is not True:
+            return []
+
         # pprint (meta)
 
         # Parse logic !!!!
-        ret = [Record(id_, meta.hostname, domain, state, meta.ip_addrs)]
+        #ret = [OldRecord(id_, meta.hostname, domain, state, meta.ip_addrs)]
+        retNew = [Record(owner=id_, name=meta.hostname, domain=domain, rr=meta.ip_addrs)]
         for alias in self._get_names(name, meta.labels):
-            ret.append(Record(id_, alias, domain, state, meta.ip_addrs))
+            #ret.append(OldRecord(id_, alias, domain, state, meta.ip_addrs))
+            retNew.append(Record(owner=id_, name=alias, domain=domain, rr=meta.ip_addrs))
 
             if per_networks:
                 # Loop over each networks
                 for net_name, net_ip in self._get_net_addrs(meta.raw_networks).items():
                     net_alias = "%s.%s" % (net_name, alias)
-                    ret.append(Record(id_, net_alias, domain, state, [net_ip]))
+                    #ret.append(OldRecord(id_, net_alias, domain, state, [net_ip]))
+                    retNew.append(Record(owner=id_, name=net_alias, domain=domain, rr=[net_ip]))
 
             if per_ports:
                 # Loop over each ports
                 for port_key, port_ips in meta.ports:
                     port_rec = "%s.%s" % (port_key, alias)
-                    ret.append(Record(id_, port_rec, domain, state, port_ips))
+                    #ret.append(OldRecord(id_, port_rec, domain, state, port_ips))
+                    retNew.append(Record(owner=id_, name=port_rec, domain=domain, rr=port_ips))
 
         # Genrate reverse
         # pprint (ret)
         if do_reverses:
             arpa = []
-            for record in ret:
+            for record in retNew:
                 # record.domain
                 # record.name
-                for addr in record.addrs:
+                for addr in record.rr:
                     rev_addr = ".".join(reversed(addr.split(".")))
                     # print ("ARPAAAA", record, addr, rev_addr)
                     # if not rev_addr:
                     #    pprint (record)
 
                     #    assert False
-                    rec = Record(
-                        id_, rev_addr, "in-addr.arpa", state, [record.name + domain]
+                    #rec = OldRecord(
+                    #    id_, rev_addr, "in-addr.arpa", state, [record.name + domain]
+                    #)
+                    recNew = Record(
+                        owner=id_, name=rev_addr, domain="in-addr.arpa", rr=[record.name + domain]
                     )
-                    arpa.append(rec)
+                    #arpa.append(rec)
+                    arpa.append(recNew)
 
-            ret.extend(arpa)
+            #ret.extend(arpa)
+            retNew.extend(arpa)
 
         # Save recorded
-        if save_meta:
-            ret2 = []
-            for record in ret:
-                # record.name
-                # record.domain
-                # record.addrs
+        #if save_meta:
+        #    ret2 = []
+        #    for record in ret:
+        #        # record.name
+        #        # record.domain
+        #        # record.addrs
 
-                name = "meta.%s" % meta.hostname  # record.name
-                # print ("ADD RECORD", name, record.name, record.addrs)
-                rec = Record(id_, name, record.domain, True, [record.name])
-                ret2.append(rec)
+        #        name = "meta.%s" % meta.hostname  # record.name
+        #        # print ("ADD RECORD", name, record.name, record.addrs)
+        #        rec = OldRecord(id_, name, record.domain, True, [record.name])
+        #        ret2.append(rec)
 
-            ret.extend(ret2)
+        #    ret.extend(ret2)
         # print ("ARPA")
         # pprint(ret)
 
-        return ret
+        #pprint (retNew)
+
+        return retNew
+        #return ret
 
     def _get_net_addrs(self, networks):
         return {name: value["IPAddress"] for name, value in networks.items()}
@@ -420,12 +436,20 @@ class DockerMonitor:
             )
             # meta = cont.metadata()
 
-            # for rec in self._inspect(container["Id"]):
-            for rec in cont.get_records(domain=self._domain):
-                if rec.running:
-                    for addr in rec.addrs:
-                        # WIPPP
-                        self.storeMgr.add(self._tables, rec.domain, rec.name, addr)
+            # V1
+            #for rec in cont.get_records(domain=self._domain):
+            #    if rec.running:
+            #        for addr in rec.addrs:
+            #            # WIPPP
+            #            self.storeMgr.add(self._tables, rec.domain, rec.name, addr)
+            
+            # V2
+            with self.storeMgr.session(self._tables) as store:
+                for rec in cont.get_records(domain=self._domain):
+                    #self.storeMgr.add(self._tables, rec.domain, rec.name, addr)
+                    #self.storeMgr.add(self._tables, rec.domain, rec.name, addr)
+                    #print ("ADDDDD", rec)
+                    self.storeMgr.add(self._tables, rec)
 
         # self.storeMgr.debug()
 
@@ -439,7 +463,7 @@ class DockerMonitor:
                 if cid is None:
                     continue
                 status = evt.get("status")
-                log("new event %s: %s, %s" % (evt.get("Type"), cid, status))
+                log("new '%s' event on %s: %s" % (status, evt.get("Type"), cid))
 
                 changed = False
                 if status in set(("start", "rename")):
@@ -455,11 +479,12 @@ class DockerMonitor:
 
                     for rec in cont.get_records(domain=self._domain):
                         if status == "start":
-                            for addr in rec.addrs:
-                                self.storeMgr.add(
-                                    self._tables, rec.domain, rec.name, addr
-                                )
-                                # self._table.add(rec.name, addr)
+                            self.storeMgr.add( self._tables, rec)
+                            # OLD for addr in rec.addrs:
+                            # OLD     self.storeMgr.add(
+                            # OLD         self._tables, rec.domain, rec.name, addr
+                            # OLD     )
+                            # OLD     # self._table.add(rec.name, addr)
 
                         elif status == "rename":
                             old_name = get(evt, "Actor", "Attributes", "oldName")
@@ -472,50 +497,17 @@ class DockerMonitor:
                             # self._table.rename(old_name, new_name)
 
                 elif status == "die":
-                    # print ("DIE")
                     changed = True
+                    #old_records = self.storeMgr.get(self._tables, owner=cid, aggregate=True)
+                    old_records = self.storeMgr.query(self._tables, owner=cid, aggregate=True)
 
-                    cont = self._docker.inspect_container(cid)
-                    cont = ContainerInspect(self.storeMgr, cont)
-
-                    for rec in cont.get_records(domain=self._domain):
-                        # Skip arpa
-                        if rec.name:
-                            self.storeMgr.remove(self._tables, rec.domain, rec.name)
-
-                    # Fetch all IPs
-                    id_ = cid[:12]
-                    ip_map = self.storeMgr.get(self._tables, self._domain, id_)
-                    for table_name, table in ip_map.items():
-                        # all_ips = [ [ ip for ip in ips ] for ips in table.values() ]
-                        all_ips = []
-                        for ips in table.values():
-                            ips = ips or []
-                            for ip in ips:
-                                all_ips.append(ip)
-
-                    all_ips = list(set(all_ips))
-                    # pprint (all_ips)
-
-                    for ip in all_ips:
-                        # rev_ip = "%s.in-addr.arpa" % ".".join(reversed(addr.split(".")))
-                        rev_ip = ".".join(reversed(ip.split(".")))
-                        # print ("REMOVE ARPA", rev_ip)
-                        self.storeMgr.remove(self._tables, "in-addr.arpa", rev_ip)
-
-                    # try:
-                    #    assert False, "WIPPP"
-                    #    #self.storeMgr.remove(self._tables, rec.name)
-                    #    #for name in rec.name:
-                    #    print ("REMOVE RECORD", rec)
-                #                       #     print ("REMOVE RECORD", rec.name)
-                #    self.storeMgr.remove(self._tables, rec.domain, rec.name)
-                #    # self._table.remove(rec.name)
-
-                # except Exception as e:
-                #    log("Error: %s", e)
+                    with self.storeMgr.session(self._tables) as store:
+                        for store, records in old_records.items():
+                            for rec in records:
+                                self.storeMgr.remove([store], rec)
 
                 if changed:
                     # WIPPP
                     log("Table content changes on event: %s" % status)
                     self.storeMgr.debug()
+
