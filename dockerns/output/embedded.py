@@ -5,6 +5,8 @@ import os
 import re
 import sys
 import signal
+import gevent
+import sys
 from collections import defaultdict
 from builtins import str
 
@@ -40,12 +42,6 @@ DNS_RESOLVER_TIMEOUT = 3.0
 # =============
 
 
-def stop(*servers):
-    for svr in servers:
-        if svr.started:
-            svr.stop()
-    sys.exit(signal.SIGINT)
-
 
 class Plugin(BackendInst):
     "Store records in embedded DNS server"
@@ -74,9 +70,16 @@ class Plugin(BackendInst):
         resolvers = (_conf["resolvers"]) if _conf["recurse"] else ()
         resolvers = ()
 
+        def stop(*servers):
+            for svr in servers:
+                if svr.started:
+                    svr.stop()
+            sys.exit(signal.SIGINT)
+
+
         dns = DnsServer(_conf["bind"], self._table, resolvers)
-        # gevent.signal_handler(signal.SIGINT, stop, dns)
-        # gevent.signal_handler(signal.SIGTERM, stop, dns)
+        gevent.signal_handler(signal.SIGINT, stop, dns)
+        gevent.signal_handler(signal.SIGTERM, stop, dns)
 
         return dns.start
 
@@ -262,6 +265,7 @@ class DnsServer(DatagramServer):
     def handle(self, data, peer):
         "Handle DNS replies"
 
+
         rec = DNSRecord.parse(data)
         addrs = set()
         names = set()
@@ -287,9 +291,10 @@ class DnsServer(DatagramServer):
                 if tmp is not None:
                     names.add(tmp)
 
-        self.socket.sendto(self._reply(rec, auth, addrs, names), peer)
+        peer_ip = peer[0]
+        self.socket.sendto(self._reply(rec, auth, addrs, names, peer_ip), peer)
 
-    def _reply(self, rec, auth, addrs, names):
+    def _reply(self, rec, auth, addrs, names, peer_ip):
         "Craft DNS replies"
 
         reply = DNSRecord(
@@ -303,6 +308,9 @@ class DnsServer(DatagramServer):
 
         for name in names:
             reply.add_answer(RR(rec.q.qname, QTYPE.PTR, rdata=PTR(name)))
+
+        #log ("dns.embedded Answers %s: %s: %s" % (peer_ip, ', '.join([ str( '.'.join(ques._qname.label.decode()) ) for ques in reply.questions ]), None )) #reply.rr))
+        log ("dns.embedded Answers %s" % peer_ip)
         return reply.pack()
 
     def _gethostbyname(self, name):

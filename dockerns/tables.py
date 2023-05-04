@@ -19,17 +19,11 @@ class Record:
         "name": "",
         "kind": "A",
         "rr": None,  # list
-        "reverse": True,
+        #"reverse": True,
+        #"links": None,
         "owner": None,
         "meta": None,  # dict
     }
-
-    def serialize(self):
-        ret = self.__dict__
-        return ret
-
-    def __repr__(self):
-        return f"Record({self.name}.{self.domain}:{self.kind})"
 
     def __init__(self, **kwargs):
         conf = dict(self.default_conf)
@@ -37,11 +31,27 @@ class Record:
         for key, value in conf.items():
             setattr(self, key, value)
 
+        # Process attributes
         self.rr = self.rr or []
         self.meta = self.meta or {}
 
+        # # Process links
+        # links = self.links or []
+        # if isinstance(links, str):
+        #     links = links.split(',')
+        # self.links = links
+
         assert self.domain, f"Invalid domain '{self.domain}' for: {self.__dict__}"
         assert self.kind, f"Invalid kind '{self.kind}' for: {self.__dict__}"
+        #assert isinstance(self.links, list)
+
+
+    def serialize(self):
+        ret = self.__dict__
+        return ret
+
+    def __repr__(self):
+        return f"Record({self.name}.{self.domain}:{self.kind})"
 
 
 # StateManagement
@@ -198,7 +208,8 @@ class Stateful(StoreTable):
 
     def rename(self, domain, old_name, new_name):
         "Rename hook"
-        assert False, "Rename is not implemented"
+        print ("NOT IMPLEMENTED RENAME")
+        #assert False, "Rename is not implemented"
 
     def remove(self, record):
         "Remove hook"

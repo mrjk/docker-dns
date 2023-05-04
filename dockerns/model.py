@@ -3,6 +3,8 @@
 # Imports
 import importlib
 import gevent
+import signal
+import sys
 
 from pprint import pprint
 
@@ -113,6 +115,8 @@ class PluginMgr:
             if callable(func):
                 proc = gevent.spawn(func)
                 proclist.append(proc)
+
+
 
             self._children[backend_name] = plugin
 
