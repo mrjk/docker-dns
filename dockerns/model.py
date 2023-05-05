@@ -32,9 +32,9 @@ class PluginInst:
         # Init object
         self.parent = parent
         self.storeMgr = storeMgr
-        conf = dict(self.default_conf)
-        conf.update(conf or {})
-        self.conf = conf
+        _conf = dict(self.default_conf)
+        _conf.update(conf or {})
+        self.conf = _conf
 
         # Pre init
         self._store = None

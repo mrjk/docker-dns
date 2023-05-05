@@ -29,21 +29,25 @@ TEMPLATE_BASE = """
 
 {% for net_name, net_conf in cont.networks_by_name.items() -%}
 {% for alias in net_conf.get('aliases') -%}
-;{{ domain }};{{ alias }};A;{{ net_conf.get('ip') }}
-;{{ domain }};{{ net_name }}.{{ alias }};A;{{ net_conf.get('ip') }}
-;in-addr.arpa;{{ net_conf.get('ip')|reverse_ip  }};PTR;{{ alias }}.{{ domain }}.
-;in-addr.arpa;{{ net_conf.get('ip')|reverse_ip }};PTR;{{ net_name }}.{{ alias }}.{{ domain }}.
-;in-addr.arpa;{{ net_conf.get('ip')|reverse_ip  }};A;{{ alias }}.{{ domain }}.
-;in-addr.arpa;{{ net_conf.get('ip')|reverse_ip }};A;{{ net_name }}.{{ alias }}.{{ domain }}.
+;default;{{ domain }};{{ alias }};A;{{ net_conf.get('ip') }}
+;default;{{ domain }};{{ net_name }}.{{ alias }};A;{{ net_conf.get('ip') }}
+default;in-addr.arpa;{{ net_conf.get('ip')|reverse_ip  }};PTR;{{ alias }}.{{ domain }}.
+default;in-addr.arpa;{{ net_conf.get('ip')|reverse_ip }};PTR;{{ net_name }}.{{ alias }}.{{ domain }}.
+default;in-addr.arpa;{{ net_conf.get('ip')|reverse_ip  }};A;{{ alias }}.{{ domain }}.
+default;in-addr.arpa;{{ net_conf.get('ip')|reverse_ip }};A;{{ net_name }}.{{ alias }}.{{ domain }}.
 {% endfor %}
 {%- endfor %}
+
+"""
+
+"""
 
 {% for aliase in cont.aliases -%}
 {% for port_name, port_conf in cont.ports_by_name.items() -%}
 {% for ip in port_conf.ips -%}
-;{{ domain }};{{ port_name }}.{{ aliase }};A;{{ ip }}
+;default;{{ domain }};{{ port_name }}.{{ aliase }};A;{{ ip }}
 {% if aliase == cont.name %}
-;in-addr.arpa;{{ ip | reverse_ip }};PTR;{{ port_name }}.{{ aliase }}.{{ domain }}.
+;default;in-addr.arpa;{{ ip | reverse_ip }};PTR;{{ port_name }}.{{ aliase }}.{{ domain }}.
 {% endif %}
 {% endfor %}
 {%- endfor %}
@@ -56,7 +60,8 @@ TEMPLATE_EXTENDED = TEMPLATE_BASE + """
 {% set conf = value | parse_kv %}
 {% set prefix = [conf.domain|d(domain), conf.record|d(cont.name), conf.type|d('A')]|join(';') %}
 {% set conf_data = conf.data|d('cont.networks_ips') %}
-;{{ prefix }};{{ conf_data }}
+{% set conf_stores = conf.stores|d('default') %}
+;{{ conf_stores }};{{ prefix }};{{ conf_data }}
 {%- endfor -%}
 """
 
@@ -71,7 +76,7 @@ class Plugin(SourceInst):
     "Reads events from Docker and updates the name table"
 
     default_conf = {
-        "tables": ["default"],
+        "stores": ["default"],
         "docker_socket": "unix:///var/run/docker.sock",
         "expose_ip": "",
         "domain": "docker",
@@ -87,7 +92,7 @@ class Plugin(SourceInst):
 # Docker monitoring
 # =============
 
-RecordConfig = namedtuple("record", ["domain", "name", "type", "rr","links"])
+RecordConfig = namedtuple("record", ["stores", "domain", "name", "type", "rr","links"])
 
 
 def parse_params(str_conf):
@@ -177,11 +182,16 @@ def deep_get(obj, *keys, strict=True):
         elif hasattr(ret, 'get') and key in ret:
             ret = ret.get(key)
         else:
-            index = int(key)
-            if 0 <= index < len(ret):
-                ret = ret[index]
-            else:
+            found = False
+            try:
+                index = int(key)
+                if 0 <= index < len(ret):
+                    ret = ret[index]
+                    found = True
+            except ValueError:
+                pass
 
+            if not found:
                 if strict:
                     raise Exception("Missing key '{key}' in '{keys}' for {obj}")
                 else:
@@ -197,7 +207,6 @@ class DBCont():
     def __init__(self, client):
         self._db = {}
         self._docker = client
-        #self._store = store
 
         # Autofill
         for container in client.containers():
@@ -319,13 +328,13 @@ class ContainerRecords:
         msg = temp.render(cont=meta, domain=domain, cont_db=cont_db)
 
         ret = []
-        #print (msg)
+        print (msg)
         for line in msg.split('\n'):
             if not line.startswith(';'):
                 continue
             params = line.split(';')[1:]
             size = len(params)
-            SIZE = 5
+            SIZE = len(RecordConfig._fields)
             if size == 1:
                 continue
             elif size != SIZE:
@@ -336,15 +345,19 @@ class ContainerRecords:
             record = RecordConfig(*params)
 
             # Build links and reference
+            stores = record.stores or "default"
+            stores = stores.split(',')
+
             db = self._resolve_data_links(record.links, cont_db)
             _rr = self._resolve_data_ref(record.rr, db)
 
             try:
                 rec = Record(owner=meta.uuid, 
-                       name=record.name,
-                       domain=record.domain,
-                       rr=_rr,
-                       kind=record.type)
+                        name=record.name,
+                        domain=record.domain,
+                        stores=stores,
+                        rr=_rr,
+                        kind=record.type)
                 ret.append(rec)
             except TypeError:
                 log("Ignore record: %s" % line )
@@ -669,8 +682,8 @@ class DockerMonitor:
         self._db_cont = DBCont(client)
         self._docker = client
         self.storeMgr = parent.storeMgr
-        self._tables = parent.conf["tables"]
-        log("Working with tables: %s" % self._tables)
+        self._store_names = parent.conf["stores"]
+        log("Working with stores: %s" % self._store_names)
         self._domain = parent.conf["domain"].lstrip(".")
         #self._default_ip = parent.conf["expose_ip"]
 
@@ -682,9 +695,9 @@ class DockerMonitor:
 
         # Bootstrap by inspecting all running containers
         for cont in self._db_cont.list():
-            with self.storeMgr.session(self._tables) as store:
+            with self.storeMgr.session(self._store_names) as store:
                 for rec in cont.get_records(domain=self._domain):
-                    store.add(self._tables, rec)
+                    store.add(rec.stores, rec)
 
         # read the docker event stream and update the name table
         for raw in events:
@@ -704,29 +717,35 @@ class DockerMonitor:
     def _event_container(self, cid, status, evt):
         changed = False
 
-        if status in set(("start", "rename")):
-            changed = True
-            cont = self._db_cont.get_by_id(cid)
+        with self.storeMgr.session(self._store_names) as store:
 
-            for rec in cont.get_records(domain=self._domain):
-                if status == "start":
-                    self.storeMgr.add(self._tables, rec)
-                elif status == "rename":
-                    old_name = get(evt, "Actor", "Attributes", "oldName")
-                    new_name = get(evt, "Actor", "Attributes", "name")
-                    # old_name = ".".join((old_name, rec.domain))
-                    # new_name = ".".join((new_name, rec.domain))
-                    self.storeMgr.rename(self._tables, rec.domain, old_name, new_name)
+            if status in set(("start", "rename")):
+                changed = True
+                cont = self._db_cont.get_by_id(cid)
 
-        elif status == "die":
-            changed = True
-            self._db_cont.remove_by_id(cid)
+                for rec in cont.get_records(domain=self._domain):
+                    if status == "start":
+                        #self.storeMgr.add(self._store_names, rec)
+                        store.add(rec.stores, rec)
+                    elif status == "rename":
+                        #old_name = get(evt, "Actor", "Attributes", "oldName")
+                        log("Event: rename %s" % cid)
+                        #new_name = get(evt, "Actor", "Attributes", "name")
+                        self._db_cont.remove_by_id(cid)
+                        self._db_cont.add_by_id(cid)
 
-            old_records = self.storeMgr.query(self._tables, owner=cid, aggregate=True)
-            with self.storeMgr.session(self._tables) as store:
+                        # old_name = ".".join((old_name, rec.domain))
+                        # new_name = ".".join((new_name, rec.domain))
+                        #self.storeMgr.rename(self._store_names, rec.domain, old_name, new_name)
+
+            elif status == "die":
+                changed = True
+                self._db_cont.remove_by_id(cid)
+
+                old_records = self.storeMgr.query(self._store_names, owner=cid, aggregate=True)
                 for store_name, records in old_records.items():
                     for rec in records:
                         store.remove([store_name], rec)
-        #if changed:
-        #    log("Dump table content changes: %s" % status)
-        #    self.storeMgr.debug()
+            #if changed:
+            #    log("Dump table content changes: %s" % status)
+            #    self.storeMgr.debug()

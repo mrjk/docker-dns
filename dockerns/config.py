@@ -3,22 +3,24 @@ import anyconfig
 import argparse
 from pprint import pprint
 
+RUNTIME_CONF = {
+        "file_config": None,
+        "log_level": "info",
+        "verbose": True,
+        "stateful": True,
+    }
 
 DEFAULT_CONF = {
     "vars": {
         "my_var1": "domain.org",
         "expose_ip": "12.12.12.15",
     },
-    "config": {
-        "file_config": "config.yml",
-        "log_level": "info",
-        "verbose": True,
-        "stateful": True,
-    },
+    #"config": RUNTIME_CONF, # DEPRECATED
+    "runtime": RUNTIME_CONF,
     "outputs": {
-        "embedded": {
+        "default": {
             "driver": "embedded",
-            "bind": "127.0.0.1:5358",
+            "bind": "0.0.0.0:53",
             "resolvers": "8.8.8.8,8.8.4.4",
             "recurse": True,
             "records": ["default"],
@@ -26,9 +28,9 @@ DEFAULT_CONF = {
         },
     },
     "sources": {
-        "cont": {
+        "default": {
             "driver": "cont_base",
-            "tables": ["default"],
+            "stores": ["default"],
             "docker": "unix:///var/run/docker.sock",
             "expose_ip": "12.12.12.15",  # DEPRECATED
             "domain": "docker",  # DEPRECATED
@@ -59,19 +61,75 @@ DEFAULT_CONF = {
 
 
 class DockerNSConfig:
+    runtime_conf = RUNTIME_CONF
     default_conf = DEFAULT_CONF
 
     def __init__(self):
-        conf = self.conf_from_defaults()
-        # conf.update(self.conf_from_file())
-        # conf.update(self.conf_from_env())
-        conf["config"].update(self.conf_from_cli())
+        #conf = self.conf_from_defaults()
+        ## conf.update(self.conf_from_file())
+        ## conf.update(self.conf_from_env())
+        #conf["config"].update(self.conf_from_cli())
 
-        self._conf = conf
+
+        # Load runtime configuration
+        # -------------------
+        rt_default = dict(self.runtime_conf)
+        rt_cli = self.conf_from_cli()
+
+        rt_conf = {}
+        rt_conf.update(rt_default)
+        rt_conf.update(rt_cli)
+        #self.rt_conf = rt_conf
+
+        user_conf = {
+                    "runtime": rt_conf,
+                }
+
+        #pprint (rt_conf)
+
+
+        # Load user configuration
+        # -------------------
+        config_files = rt_conf['file_config'] or []
+        if isinstance(config_files, str):
+            config_files = config_files.split(',')
+        if not isinstance(config_files, list):
+            config_files = [config_files]
+
+        if config_files:
+            ac_conf = anyconfig.load(config_files, ac_parser="yaml")
+        else:
+            ac_conf = self.default_conf
+
+        user_conf.update(ac_conf)
+
+        self._conf = user_conf
+        return
+        #pprint (user_conf)
+
+        #assert False
+
+        #cli_default = self.conf_from_defaults()
+        #cli_config = { 'config': self.conf_from_cli() }
+
+        #dump = {
+        #        "cli_default": cli_default,
+        #        "cli_config": cli_config
+
+        #        }
+
+        #self._conf = {}
+        #self._conf.update(cli_default)
+        #self._conf.update(cli_config)
+
+        #print ("SPLIT")
+        #pprint (dump)
+        #print ("MERGED")
+        #pprint (self._conf)
 
     def _conf_opts(self):
         "Return a key value config for app"
-        ret = self.conf_from_defaults().get("config")
+        ret = self.conf_from_defaults().get("runtime")
         return ret
 
     # Config sources
@@ -105,10 +163,11 @@ class DockerNSConfig:
 
         for key, value in self._conf_opts().items():
             opt_name = "--%s" % key.replace("_", "-")
-            parser.add_argument(opt_name, default=value, help="NOHELP")
+            var_name = "DOCKERNS_%s" % key.upper()
+            default_val = os.environ.get(var_name, value)
+            parser.add_argument(opt_name, default=default_val, help=f"NOHELP [{var_name}]")
 
         ret = dict(parser.parse_args().__dict__)
-        # pprint(ret)
         return ret
 
     # Assemble configs
@@ -127,7 +186,7 @@ class DockerNSConfig:
         conf_default = self.conf_from_defaults()
 
         conf_cli = self.conf_from_cli()
-        conf_env = self.conf_from_env()
+        #conf_env = self.conf_from_env()
         conf_file = self.conf_from_file()
 
         confs = [conf_default, conf_file, conf_env, conf_cli]

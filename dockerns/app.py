@@ -68,53 +68,56 @@ def parse_args():
         "--config", default=DOCKERNS_CONFIG, help="dockerns yaml configuration"
     )
 
-    parser.add_argument(
-        "--docker", default=docker_url, help="Url to docker TCP/UNIX socket"
-    )
-    parser.add_argument(
-        "--dns-bind", default=DNS_BINDADDR, help="Bind address for DNS server"
-    )
-    parser.add_argument(
-        "--domain", default="docker", help="Base domain name for registered services"
-    )
-    parser.add_argument(
-        "--expose-ip",
-        default="",
-        help="Default IP to report on exposed services, skipped if empty",
-    )
-    parser.add_argument(
-        "--resolver",
-        default=DNS_RESOLVER,
-        nargs="*",
-        help="Servers for recursive DNS resolution",
-    )
-    parser.add_argument(
-        "--no-recursion",
-        action="store_const",
-        const=1,
-        help="Disables recursive DNS queries",
-    )
+    #parser.add_argument(
+    #    "--docker", default=docker_url, help="Url to docker TCP/UNIX socket"
+    #)
+    #parser.add_argument(
+    #    "--dns-bind", default=DNS_BINDADDR, help="Bind address for DNS server"
+    #)
+    #parser.add_argument(
+    #    "--domain", default="docker", help="Base domain name for registered services"
+    #)
+    #parser.add_argument(
+    #    "--expose-ip",
+    #    default="",
+    #    help="Default IP to report on exposed services, skipped if empty",
+    #)
+    #parser.add_argument(
+    #    "--resolver",
+    #    default=DNS_RESOLVER,
+    #    nargs="*",
+    #    help="Servers for recursive DNS resolution",
+    #)
+    #parser.add_argument(
+    #    "--no-recursion",
+    #    action="store_const",
+    #    const=1,
+    #    help="Disables recursive DNS queries",
+    #)
     parser.add_argument(
         "-q", "--quiet", action="store_const", const=1, help="Quiet mode"
     )
-    parser.add_argument(
-        "-r", "--record", nargs="*", default=[], help="Add a static record `name:host`"
-    )
+    #parser.add_argument(
+    #    "-r", "--record", nargs="*", default=[], help="Add a static record `name:host`"
+    #)
     return parser.parse_args()
 
 
 class App:
     def __init__(self):
         _conf = DockerNSConfig()
-        self.settings = SimpleNamespace(**_conf.get_conf("config", {}))
-
-        pprint(self.settings)
+        self.settings = SimpleNamespace(**_conf.get_conf("runtime", {}))
 
         self.conf = _conf
+        #pprint (_conf.__dict__)
+
 
     def cli(self):
         # global QUIET
         # QUIET = False
+
+        #args = parse_args()
+        #assert False
 
         # Create stores
         wait_list = []

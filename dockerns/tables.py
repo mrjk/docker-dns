@@ -20,7 +20,7 @@ class Record:
         "kind": "A",
         "rr": None,  # list
         #"reverse": True,
-        #"links": None,
+        "stores": None,
         "owner": None,
         "meta": None,  # dict
     }
@@ -33,6 +33,7 @@ class Record:
 
         # Process attributes
         self.rr = self.rr or []
+        self.stores = self.stores or []
         self.meta = self.meta or {}
 
         # # Process links
@@ -43,7 +44,7 @@ class Record:
 
         assert self.domain, f"Invalid domain '{self.domain}' for: {self.__dict__}"
         assert self.kind, f"Invalid kind '{self.kind}' for: {self.__dict__}"
-        #assert isinstance(self.links, list)
+        assert isinstance(self.stores, list)
 
 
     def serialize(self):
@@ -243,6 +244,7 @@ class StoreInst:
 
     def _proxy_tables(self, method, *args, tables=None, **kwargs):
         tables = tables or list(self._tables.keys())
+        log ("Store[%s]: %s on %s: %s %s" % (self.name, method, ','.join(tables), args or '' , kwargs or '' ) )
         for table_name, table in self._tables.items():
             if not table or table_name in tables:
                 func = getattr(table, method)

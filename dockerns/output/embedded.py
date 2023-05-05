@@ -47,7 +47,7 @@ class Plugin(BackendInst):
     "Store records in embedded DNS server"
 
     default_conf = {
-        "bind": "127.0.0.1:5358",
+        "bind": "0.0.0.0:53",
         #'resolvers': '8.8.8.8,8.8.4.4',
         "resolvers": "8.8.8.8",
         "recurse": True,
@@ -155,7 +155,7 @@ class NameTable(StoreTable):
                 #        continue
 
                 for addr in record.rr:
-                    log("table.add %s -> %s", name, addr)
+                    #log("table.add %s -> %s", name, addr)
                     self._db[key].add(addr)
 
     def get(self, name, domain=None):
@@ -172,20 +172,20 @@ class NameTable(StoreTable):
                 wild = re.sub(r"^[^\.]+", "*", name)
                 wildkey = self._key(wild)
                 wildres = self._db.get(wildkey)
-                print ("MATCH", res, key)
 
                 if res:
+                    pass
                     log(
                         "table.get %s with %s" % (name, ", ".join(addr for addr in res))
                     )
                 elif wildres:
-                    log(
-                        "table.get %s with %s"
-                        % (name, ", ".join(addr for addr in wildres))
-                    )
+                    #log(
+                    #    "table.get %s with %s"
+                    #    % (name, ", ".join(addr for addr in wildres))
+                    #)
                     res = wildres
-                else:
-                    log("table.get %s with NoneType" % (name))
+                #else:
+                #    log("table.get %s with NoneType" % (name))
 
                 #res = res or ['5.5.5.5']
                 return res
@@ -204,7 +204,7 @@ class NameTable(StoreTable):
         new_key = ".".join([self._key(new_name), domain])
         with self._lock:
             self._db[new_key] = self._db.pop(old_key)
-            log("table.rename (%s -> %s)", old_name, new_name)
+            #log("table.rename (%s -> %s)", old_name, new_name)
 
     def remove(self, record, rr=None):
         "Remove record from DB"
@@ -220,7 +220,7 @@ class NameTable(StoreTable):
                 # Remove the whole entry
                 if rr is None:
                     if key in self._db:
-                        log("table.remove %s", name)
+                        #log("table.remove %s", name)
                         del self._db[key]
 
                 # Remove specific records
@@ -229,7 +229,7 @@ class NameTable(StoreTable):
 
                     # Remove records one by one
                     for val in rr:
-                        log("table.remove %s->%s" % (name, val))
+                        #log("table.remove %s->%s" % (name, val))
                         try:
                             target.remove(val)
                         except KeyError:
@@ -304,7 +304,7 @@ class DnsServer(DatagramServer):
                 if tmp is not None:
                     names.add(tmp)
 
-        pprint (rec.q.qname.label)
+        #pprint (rec.q.qname.label)
         peer_ip = peer[0]
         self.socket.sendto(self._reply(rec, auth, addrs, names, peer_ip), peer)
 
