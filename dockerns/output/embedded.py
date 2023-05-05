@@ -172,6 +172,7 @@ class NameTable(StoreTable):
                 wild = re.sub(r"^[^\.]+", "*", name)
                 wildkey = self._key(wild)
                 wildres = self._db.get(wildkey)
+                print ("MATCH", res, key)
 
                 if res:
                     log(
@@ -185,6 +186,8 @@ class NameTable(StoreTable):
                     res = wildres
                 else:
                     log("table.get %s with NoneType" % (name))
+
+                #res = res or ['5.5.5.5']
                 return res
 
     def rename(self, domain, old_name, new_name):
@@ -236,6 +239,7 @@ class NameTable(StoreTable):
 
         try:
             label = DNSLabel(name.lower()).label
+            #print ("LABEL", label)
             return label
         except Exception:
             print("FAIL HERER on", name)
@@ -283,14 +287,17 @@ class DnsServer(DatagramServer):
                     addrs.add(tmp)
 
         elif rec.q.qtype in (QTYPE.PTR,):
+            #key = ".".join([ str(x) for x in rec.q.qname.label])
             key = ".".join(rec.q.qname.label)
             names = self._table.get(key) or set()
             if not names:
+                #addr = ".".join([ str(x) for x in rec.q.qname.stripSuffix("in-addr.arpa").label])
                 addr = ".".join(rec.q.qname.stripSuffix("in-addr.arpa").label)
                 tmp = self._gethostbyaddr(addr)
                 if tmp is not None:
                     names.add(tmp)
 
+        pprint (rec.q.qname.label)
         peer_ip = peer[0]
         self.socket.sendto(self._reply(rec, auth, addrs, names, peer_ip), peer)
 
