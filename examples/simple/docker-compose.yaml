@@ -1,0 +1,43 @@
+version: '3'
+
+networks:
+  default:
+  net1:
+
+services:
+
+  dockerns:
+    image: mrjk/dockerns:latest
+    stop_grace_period: 0s
+    stop_signal: SIGKILL
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    ports:
+      - "5370:53/tcp"
+      - "5370:53/udp"
+
+
+  app:
+    image: httpd:alpine3.17
+    stop_grace_period: 0s
+    stop_signal: SIGKILL
+    networks:
+      default:
+      net1:
+    #ports:
+    #  - "8888:80/tcp"
+    deploy:
+      mode: replicated
+      replicas: 3
+    labels:
+      # Private zone
+      dockerns.default.record: >
+        record=myapp
+        data=self.networks_by_name.simple_default.ip
+      dockerns.default.alias: >
+        record=app-public
+        domain=example.org
+        data=1.2.3.4
+

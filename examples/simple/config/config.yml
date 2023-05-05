@@ -1,0 +1,34 @@
+
+outputs:
+  default:
+    driver: embedded
+    bind: 0.0.0.0:5370
+    resolvers: 8.8.8.8,8.8.4.4
+    recurse: True
+    store: default
+
+  public:
+    driver: embedded
+    bind: 0.0.0.0:5371
+    recurse: False
+    store: public
+
+  private:
+    driver: embedded
+    bind: 0.0.0.0:5372
+    recurse: False
+    store: private
+
+
+sources:
+  docker:
+    driver: cont_base
+    tables:
+      - default
+    docker: unix:///var/run/docker.sock
+    expose_ip: 12.12.12.15
+    domain: docker
+    stores:
+      - default
+
+
