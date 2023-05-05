@@ -1,0 +1,94 @@
+version: '3'
+
+vars:
+  APP_NAME: dockerns
+  APP_NS: mrjk
+
+
+
+
+tasks:
+
+  # Generic helpers
+  # -----------------
+
+  default:
+    summary: Show all commands
+    cmds:
+      - task --list
+
+  # Project helpers
+  # -----------------
+
+  bootstrap:
+    desc: Bootstrap environment
+    vars:
+      venv:
+        sh: echo "${VIRTUAL_ENV:-.venv}/bin"
+    sources:
+      - poetry.lock
+      - pyproject.toml
+    generates:
+      - "{{ .venv }}}/bin/poetry"
+    cmds:
+      - eval "$(./scripts/platform.sh env)" && ./scripts/bootstrap_deps.sh
+
+
+  setup:
+    desc: Setup project
+    deps:
+      - bootstrap
+    sources:
+      - "{{.PRJ_DIR}}/*"
+    generates:
+      - "${VIRTUAL_ENV:-.venv}/bin/paasify"
+    cmds:
+      - poetry install -vv --no-interaction --only-root
+
+  update:
+    desc: Synchronize git
+    cmds:
+      - git fetch -a && git pull
+      - task: setup
+
+
+  # Build workflow
+  # -----------------
+
+  build:
+    desc: Create a python package
+    run: once
+    sources:
+      - pyproject.toml
+    cmds:
+      - task: clean
+      - poetry build
+      - cp CHANGELOG.md dist/CHANGELOG.md
+
+  clean:
+    desc: Clean generated packages
+    status:
+      - test ! -d dist/
+    cmds:
+      - rm -rf dist/ && mkdir -p dist
+
+
+  build_docker:
+    desc: Create a docker image
+    run: once
+    #sources:
+    #  - Dockerfile
+    cmds:
+      - docker builder build --tag "{{ .APP_NS }}/{{ .APP_NAME }}:latest" .
+
+  run_docker:
+    desc: Run the code into docker
+    run: once
+    cmds:
+      - >
+        docker run --rm  -ti 
+        -v /var/run/docker.sock:/docker.sock
+        "{{ .APP_NS }}/{{ .APP_NAME }}:latest" 
+        --dns-bind 0.0.0.0:53
+        {{ .CLI_ARGS }}
+
