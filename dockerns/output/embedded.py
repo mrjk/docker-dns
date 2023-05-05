@@ -225,14 +225,21 @@ class NameTable(StoreTable):
 
                 # Remove specific records
                 elif key in self._db:
+                    target = self._db[key]
+
                     # Remove records one by one
                     for val in rr:
                         log("table.remove %s->%s" % (name, val))
-                        self._db[key].remove(val)
+                        try:
+                            target.remove(val)
+                        except KeyError:
+                            log("table.remove Failed to remove: %s->%s" % (name, val))
+
+                        #self._db[key].remove(val)
 
                     # Cleanup empty entries
-                    if not self._db[key]:
-                        del self._db[key]
+                    #if not self._db[key]:
+                    #    del self._db[key]
 
     def _key(self, name):
         "Retrieve a domain key"
